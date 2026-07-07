@@ -1,0 +1,53 @@
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.app h1 {
+  margin: 0;
+  font-size: 2.25rem;
+}
+
+.tagline {
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+.health-card {
+  margin-top: 2rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 12px;
+}
+
+.health-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.health-card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(128, 128, 128, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.pending {
+  color: #888;
+}
+
+.ok {
+  color: #1a7f37;
+}
+
+.error {
+  color: #cf222e;
+}
+
+.meta {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #888;
+}
