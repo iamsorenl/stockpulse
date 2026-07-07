@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from typing import Iterator
+from datetime import datetime, timezone
+from typing import Iterator, Optional
 
 from .config import DB_PATH
 
@@ -57,3 +58,38 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connection() as conn:
         conn.executescript(_SCHEMA)
+
+
+# ----- Generic cache accessors -------------------------------------------------
+# Kept here so all SQLite access stays in this module (per project conventions).
+# Callers own the freshness policy; this layer just stores/retrieves the raw
+# serialized value plus the UTC timestamp it was written.
+
+
+def cache_get(key: str) -> Optional[tuple[str, datetime]]:
+    """Return (value, created_at) for `key`, or None if absent.
+
+    `created_at` is returned as a timezone-aware UTC datetime.
+    """
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT value, created_at FROM cache WHERE key = ?", (key,)
+        ).fetchone()
+    if row is None:
+        return None
+    created_at = datetime.fromisoformat(row["created_at"])
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return row["value"], created_at
+
+
+def cache_set(key: str, value: str) -> None:
+    """Upsert `value` under `key`, stamping created_at with the current UTC time."""
+    now = datetime.now(timezone.utc).isoformat()
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO cache (key, value, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+            "created_at = excluded.created_at",
+            (key, value, now),
+        )
