@@ -1,3 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-yfinance==0.2.51
+yfinance==1.5.1
+# curl_cffi lets yfinance impersonate a browser; without it Yahoo's bot wall
+# returns non-JSON and every fetch fails with "Expecting value: line 1 column 1".
+curl_cffi==0.15.0
