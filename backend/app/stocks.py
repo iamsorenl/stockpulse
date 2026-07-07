@@ -7,18 +7,18 @@ Flow for GET /api/stocks/{ticker}/prices?range=:
      cache the assembled payload, and return it.
   4. Unknown/invalid ticker (no price rows) -> UnknownTickerError -> HTTP 404.
 
-The yfinance call is isolated in `_download_candles` so it can be swapped/mocked
-in tests without a network dependency.
+The fetch is isolated in `_download_candles` (delegating to the provider chain in
+`providers.py`: yfinance primary, Stooq fallback) so it can be swapped/mocked in
+tests without a network dependency.
 """
 
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import db
+from . import db, providers
 from .indicators import compute_indicators
 
 # Supported ranges -> yfinance period. All use daily ("1d") candles so SMA20 /
@@ -71,41 +71,13 @@ def _is_fresh(created_at: datetime, payload: dict[str, Any]) -> bool:
     return age < HISTORICAL_TTL
 
 
-def _clean_float(value: Any) -> float:
-    """Coerce a value to a JSON-safe float (NaN/inf -> 0.0)."""
-    f = float(value)
-    if math.isnan(f) or math.isinf(f):
-        return 0.0
-    return f
-
-
 def _download_candles(ticker: str, range_: str) -> list[dict[str, Any]]:
-    """Fetch daily OHLCV from yfinance and return candle dicts (oldest-first).
+    """Fetch daily OHLCV via the provider chain (yfinance -> Stooq fallback).
 
-    Isolated so tests can monkeypatch it. Returns [] when yfinance has no data
+    Isolated so tests can monkeypatch it. Returns [] when no provider has data
     for the ticker (caller turns that into a 404).
     """
-    import yfinance as yf  # imported lazily so the app boots without network
-
-    period = _RANGE_TO_PERIOD[range_]
-    frame = yf.Ticker(ticker).history(period=period, interval="1d", auto_adjust=False)
-    if frame is None or frame.empty:
-        return []
-
-    candles: list[dict[str, Any]] = []
-    for index, row in frame.iterrows():
-        # index is a pandas Timestamp; take the calendar date.
-        date = index.date().isoformat()
-        candles.append(
-            {
-                "date": date,
-                "open": round(_clean_float(row["Open"]), 4),
-                "high": round(_clean_float(row["High"]), 4),
-                "low": round(_clean_float(row["Low"]), 4),
-                "close": round(_clean_float(row["Close"]), 4),
-                "volume": int(_clean_float(row["Volume"])),
-            }
-        )
+    candles, _source = providers.fetch_candles(ticker, range_)
     return candles
 
 
