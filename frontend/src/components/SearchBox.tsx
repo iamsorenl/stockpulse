@@ -72,7 +72,11 @@ export function SearchBox({ onSelect, selected }: SearchBoxProps) {
   )
 
   function commit(symbol: string) {
-    onSelect(symbol)
+    // Normalize once here so both suggestion clicks and raw typed tickers are
+    // uppercased/trimmed before we load them.
+    const normalized = symbol.trim().toUpperCase()
+    if (!normalized) return
+    onSelect(normalized)
     setQuery('')
     setState({ kind: 'idle' })
     setOpen(false)
@@ -87,10 +91,12 @@ export function SearchBox({ onSelect, selected }: SearchBoxProps) {
       e.preventDefault()
       setHighlight((h) => Math.max(h - 1, 0))
     } else if (e.key === 'Enter') {
-      if (items[highlight]) {
-        e.preventDefault()
-        commit(items[highlight].symbol)
-      }
+      // Prefer a highlighted suggestion; otherwise fall back to whatever the
+      // user typed so any yfinance-supported ticker (not just the curated list)
+      // is reachable. A bad ticker surfaces the chart's existing 404 state.
+      e.preventDefault()
+      if (items[highlight]) commit(items[highlight].symbol)
+      else if (query.trim()) commit(query)
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
@@ -127,9 +133,27 @@ export function SearchBox({ onSelect, selected }: SearchBoxProps) {
             <li className="searchbox-status">Searching…</li>
           )}
           {state.kind === 'empty' && (
-            <li className="searchbox-status">
-              No matches for “{debouncedQuery}”.
-            </li>
+            <>
+              <li className="searchbox-status">
+                No matches in suggestions for “{debouncedQuery}”.
+              </li>
+              <li
+                role="option"
+                aria-selected={false}
+                className="searchbox-option searchbox-option--active"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  commit(debouncedQuery)
+                }}
+              >
+                <span className="searchbox-symbol">
+                  {debouncedQuery.trim().toUpperCase()}
+                </span>
+                <span className="searchbox-name">
+                  Look up this ticker directly →
+                </span>
+              </li>
+            </>
           )}
           {state.kind === 'error' && (
             <li className="searchbox-status searchbox-status--error">
