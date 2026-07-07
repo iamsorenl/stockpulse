@@ -61,6 +61,36 @@ export interface PricesResponse {
   indicators: Indicators
 }
 
+// Error carrying the HTTP status so callers can distinguish, e.g., a 404
+// (unknown ticker) from a network/500 failure and render the right message.
+export class ApiError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+// Pull the backend's { "detail": "..." } message off an error response, falling
+// back to a generic status string when the body isn't the expected shape.
+async function readErrorDetail(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json()
+    if (
+      body &&
+      typeof body === 'object' &&
+      'detail' in body &&
+      typeof (body as { detail: unknown }).detail === 'string'
+    ) {
+      return (body as { detail: string }).detail
+    }
+  } catch {
+    // Non-JSON body — fall through to the generic message.
+  }
+  return `Request failed: HTTP ${res.status}`
+}
+
 // ----- Endpoints -----
 
 // GET /health -> { "status": "ok" }
@@ -70,4 +100,39 @@ export async function getHealth(): Promise<HealthResponse> {
     throw new Error(`Health check failed: HTTP ${res.status}`)
   }
   return (await res.json()) as HealthResponse
+}
+
+// GET /api/search?q=<text> -> { results: [{ symbol, name }, ...] }
+// Empty list on no match; never an error from the backend for a valid request.
+export async function searchStocks(
+  q: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  const res = await fetch(apiUrl(`/api/search?q=${encodeURIComponent(q)}`), {
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  const body = (await res.json()) as SearchResponse
+  return body.results
+}
+
+// GET /api/stocks/{ticker}/prices?range=<1mo|6mo|1y|5y>
+// Unknown ticker -> 404 (ApiError with status 404 and the backend's detail).
+export async function getPrices(
+  ticker: string,
+  range: PriceRange,
+  signal?: AbortSignal,
+): Promise<PricesResponse> {
+  const res = await fetch(
+    apiUrl(
+      `/api/stocks/${encodeURIComponent(ticker)}/prices?range=${encodeURIComponent(range)}`,
+    ),
+    { signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  return (await res.json()) as PricesResponse
 }

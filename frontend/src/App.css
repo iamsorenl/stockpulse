@@ -1,53 +1,413 @@
-.app {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 3rem 1.5rem;
-  font-family: system-ui, -apple-system, sans-serif;
+/* StockPulse — dashboard styling. Reuses theme tokens from index.css
+   (--text, --text-h, --bg, --border, --code-bg, --accent). */
+
+.page {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  width: 100%;
 }
 
-.app h1 {
+/* ---------- Top bar ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.brand-mark {
+  color: var(--accent);
+  font-size: 20px;
+}
+.brand-name {
+  color: var(--text-h);
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+
+/* ---------- Search box ---------- */
+.searchbox {
+  position: relative;
+  flex: 1;
+  max-width: 460px;
+  margin-left: auto;
+}
+.searchbox-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.searchbox-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.searchbox-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
   margin: 0;
-  font-size: 2.25rem;
-}
-
-.tagline {
-  color: #888;
-  margin-top: 0.25rem;
-}
-
-.health-card {
-  margin-top: 2rem;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid rgba(128, 128, 128, 0.3);
+  padding: 6px;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
+  box-shadow: var(--shadow);
+  max-height: 340px;
+  overflow-y: auto;
+  z-index: 30;
+}
+.searchbox-status {
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+.searchbox-status--error {
+  color: #d23b3f;
+}
+.searchbox-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.searchbox-option--active {
+  background: var(--accent-bg);
+}
+.searchbox-symbol {
+  font-weight: 600;
+  color: var(--text-h);
+  min-width: 56px;
+}
+.searchbox-name {
+  font-size: 14px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.health-card h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.1rem;
+/* ---------- Content ---------- */
+.content {
+  flex: 1;
+  padding: 28px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.health-card code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: rgba(128, 128, 128, 0.15);
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+.empty-hero {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+.empty-hero h1 {
+  font-size: 34px;
+  margin-bottom: 12px;
+}
+.empty-hero p {
+  color: var(--text);
+  line-height: 1.6;
 }
 
-.pending {
-  color: #888;
+/* ---------- Ticker panel ---------- */
+.ticker-panel {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.ticker-symbol {
+  font-size: 30px;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+.ticker-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+.ticker-price-label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+}
+.panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
-.ok {
-  color: #1a7f37;
+/* Trend badge */
+.trend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.trend--up {
+  color: #159968;
+  border-color: rgba(21, 153, 104, 0.4);
+  background: rgba(21, 153, 104, 0.08);
+}
+.trend--down {
+  color: #d23b3f;
+  border-color: rgba(210, 59, 63, 0.4);
+  background: rgba(210, 59, 63, 0.08);
+}
+.trend--sideways {
+  color: var(--text);
+  background: var(--code-bg);
+}
+.trend-pct {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.trend-arrow {
+  font-size: 14px;
+}
+.trend-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.trend-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.trend-range {
+  font-size: 11px;
+  opacity: 0.8;
 }
 
-.error {
-  color: #cf222e;
+/* Range selector */
+.range-selector {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.range-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.range-btn:hover:not(:disabled) {
+  color: var(--text-h);
+}
+.range-btn--active {
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.range-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
-.meta {
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: #888;
+/* ---------- Chart ---------- */
+.panel-body {
+  position: relative;
+  min-height: 460px;
+  padding: 16px 18px 18px;
+}
+.chart-wrap {
+  position: relative;
+}
+.chart-legend {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding-left: 2px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+.legend-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+.legend-swatch--candle {
+  height: 12px;
+  width: 8px;
+  background: linear-gradient(#159968 50%, #d23b3f 50%);
+  border-radius: 2px;
+}
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 420px;
+}
+.chart-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 15;
+  pointer-events: none;
+  width: 168px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  color: var(--text-h);
+}
+.chart-tooltip .tt-date {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-h);
+}
+.chart-tooltip .tt-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+.chart-tooltip .tt-grid span {
+  color: var(--text);
+}
+.chart-tooltip .tt-grid b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tooltip .tt-up {
+  color: #159968;
+}
+.chart-tooltip .tt-down {
+  color: #d23b3f;
+}
+.chart-tooltip .tt-sma {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text);
+  flex-wrap: wrap;
+}
+.chart-tooltip .tt-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.chart-tooltip .tt-sma b {
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading / error states */
+.chart-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 420px;
+  text-align: center;
+  color: var(--text);
+}
+.chart-status--error {
+  color: #d23b3f;
+}
+.chart-status--error strong {
+  font-size: 18px;
+}
+.chart-status--error span {
+  color: var(--text);
+  max-width: 420px;
+}
+.chart-status-hint {
+  font-size: 13px;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .searchbox {
+    max-width: none;
+    margin-left: 0;
+    order: 3;
+    flex-basis: 100%;
+  }
 }
