@@ -93,7 +93,7 @@ export function SentimentPanel({ ticker }: SentimentPanelProps) {
         </div>
       )}
 
-      {load.state === 'ready' && load.data.volume === 0 && (
+      {load.state === 'ready' && load.data.source === 'none' && (
         <div className="sentiment-status sentiment-status--muted">
           <strong>No Reddit discussion found yet</strong>
           <span>
@@ -106,10 +106,70 @@ export function SentimentPanel({ ticker }: SentimentPanelProps) {
         </div>
       )}
 
-      {load.state === 'ready' && load.data.volume > 0 && (
+      {load.state === 'ready' && load.data.source === 'apewisdom' && (
+        <MentionVolumeBody data={load.data} />
+      )}
+
+      {load.state === 'ready' && load.data.source === 'reddit' && (
         <SentimentBody data={load.data} />
       )}
     </section>
+  )
+}
+
+// Fallback view when post text is unavailable (archive source down) but we still
+// have real Reddit mention-volume data from ApeWisdom. The sentiment gauge would
+// be misleading here (net_score/bull/bear/neutral are 0), so we surface the raw
+// volume signal instead.
+function MentionVolumeBody({ data }: { data: SentimentResponse }) {
+  const delta =
+    data.mentions_prev != null ? data.volume - data.mentions_prev : null
+  const deltaDir: 'up' | 'down' | 'flat' =
+    delta == null || delta === 0 ? 'flat' : delta > 0 ? 'up' : 'down'
+  const deltaArrow = deltaDir === 'up' ? '▲' : deltaDir === 'down' ? '▼' : '■'
+
+  return (
+    <div className="sentiment-body sentiment-volume">
+      <div className="sentiment-volume-headline">
+        <span className="sentiment-volume-value">
+          {data.volume.toLocaleString()}
+        </span>
+        <span className="sentiment-volume-unit">
+          mention{data.volume === 1 ? '' : 's'}
+        </span>
+        {delta != null && (
+          <span
+            className={`sentiment-volume-delta sentiment-volume-delta--${deltaDir}`}
+          >
+            {deltaArrow} {Math.abs(delta).toLocaleString()} vs yesterday
+          </span>
+        )}
+      </div>
+
+      {(data.upvotes != null || data.rank != null) && (
+        <div className="sentiment-chips">
+          {data.upvotes != null && (
+            <span className="sentiment-chip">
+              ▲ {data.upvotes.toLocaleString()} upvotes
+            </span>
+          )}
+          {data.rank != null && (
+            <span className="sentiment-chip">#{data.rank} trending</span>
+          )}
+        </div>
+      )}
+
+      <div className="sentiment-meta">
+        <span className="sentiment-asof">
+          as of {formatComputedAt(data.computed_at)}
+        </span>
+      </div>
+
+      <p className="sentiment-volume-note">
+        Mention volume via ApeWisdom — post-level sentiment resumes when the
+        archive source is back.
+      </p>
+    </div>
   )
 }
 

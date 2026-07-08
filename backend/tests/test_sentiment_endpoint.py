@@ -167,7 +167,7 @@ def test_response_shape():
     cache = _FakeCache()
 
     def fetch(ticker):
-        return []
+        return ["m1"]   # non-empty -> reddit text path
 
     def score(ticker, mentions):
         return _sample_result()
@@ -178,8 +178,10 @@ def test_response_shape():
     finally:
         _restore(original)
 
-    for key in ("ticker", "net_score", "bull", "bear", "neutral", "volume", "computed_at", "top"):
+    for key in ("ticker", "net_score", "bull", "bear", "neutral", "volume",
+                "computed_at", "top", "source", "mentions_prev", "upvotes", "rank"):
         assert key in data, f"missing top-level key {key!r}: {data}"
+    assert data["source"] == "reddit", data["source"]
     assert isinstance(data["net_score"], float), data["net_score"]
     assert isinstance(data["volume"], int), data["volume"]
     assert isinstance(data["top"], list) and data["top"], data["top"]
@@ -191,70 +193,82 @@ def test_response_shape():
 
 
 @case
-def test_zero_volume_is_valid_result():
+def test_falls_back_to_apewisdom_when_no_mentions():
     cache = _FakeCache()
-
-    def fetch(ticker):
-        return []
-
-    def score(ticker, mentions):
-        return SentimentResult(
-            ticker="AAPL", net_score=0.0, bull=0, bear=0, neutral=0,
-            volume=0, computed_at="2026-07-08T00:34:59.477350+00:00", top=[],
-        )
-
-    original = _install(cache, fetch, score)
+    orig_stats = sent.get_mention_stats
+    # fetch_mentions empty (Arctic down) -> ApeWisdom volume fallback.
+    original = _install(cache, lambda t: [], lambda t, m: _sample_result())
+    sent.get_mention_stats = lambda t: {
+        "mentions": 216, "mentions_prev": 118, "upvotes": 710, "rank": 4, "name": "NVDA",
+    }
     try:
-        data = sent.get_sentiment("AAPL")
+        data = sent.get_sentiment("nvda")
     finally:
         _restore(original)
+        sent.get_mention_stats = orig_stats
 
-    assert data["volume"] == 0, data
-    assert data["top"] == [], data
-    assert cache.set_calls == 1, "zero-volume result is still cached"
+    assert data["source"] == "apewisdom", data
+    assert data["volume"] == 216, data
+    assert data["mentions_prev"] == 118 and data["upvotes"] == 710 and data["rank"] == 4, data
+    assert data["net_score"] == 0.0 and data["top"] == [], data
+    assert cache.set_calls == 1, "apewisdom result is cached"
 
 
 @case
-def test_empty_result_expires_faster_than_real_result():
-    # A volume-0 entry older than the short empty-TTL (but well inside the 1h
-    # real-result TTL) must be recomputed — otherwise a data-source outage would
-    # pin "no discussion found" for a full hour after the source recovers.
-    aged = datetime.now(timezone.utc) - timedelta(
-        seconds=sent._EMPTY_CACHE_TTL_SECONDS + 60
-    )
-    empty = json.dumps(sent.result_to_dict(SentimentResult(
-        ticker="AAPL", net_score=0.0, bull=0, bear=0, neutral=0,
-        volume=0, computed_at="2026-07-08T00:00:00+00:00", top=[],
+def test_none_source_when_nothing_available():
+    cache = _FakeCache()
+    orig_stats = sent.get_mention_stats
+    original = _install(cache, lambda t: [], lambda t, m: _sample_result())
+    sent.get_mention_stats = lambda t: None   # not on ApeWisdom board either
+    try:
+        data = sent.get_sentiment("ZZZZ")
+    finally:
+        _restore(original)
+        sent.get_mention_stats = orig_stats
+
+    assert data["source"] == "none", data
+    assert data["volume"] == 0 and data["top"] == [], data
+    assert cache.set_calls == 1, "zero result is still cached"
+
+
+@case
+def test_ttl_is_source_aware():
+    # aged past the 5-min "none" window but well inside the 1h "reddit" window.
+    aged = datetime.now(timezone.utc) - timedelta(seconds=sent._TTL_BY_SOURCE["none"] + 60)
+
+    # A "none" entry of that age must be recomputed...
+    none_payload = json.dumps(sent.result_to_dict(SentimentResult(
+        ticker="AAPL", net_score=0.0, bull=0, bear=0, neutral=0, volume=0,
+        computed_at="2026-07-08T00:00:00+00:00", top=[], source="none",
     )))
-    cache = _FakeCache(seed={"sentiment:AAPL": (empty, aged)})
+    cache = _FakeCache(seed={"sentiment:AAPL": (none_payload, aged)})
     fetch_calls = {"n": 0}
+    orig_stats = sent.get_mention_stats
 
     def fetch(ticker):
         fetch_calls["n"] += 1
         return ["m1"]
 
-    def score(ticker, mentions):
-        return _sample_result(volume=16)
-
-    original = _install(cache, fetch, score)
+    original = _install(cache, fetch, lambda t, m: _sample_result(volume=16))
+    sent.get_mention_stats = lambda t: None
     try:
         data = sent.get_sentiment("AAPL")
     finally:
         _restore(original)
-
-    assert fetch_calls["n"] == 1, "aged empty entry must trigger recompute"
+        sent.get_mention_stats = orig_stats
+    assert fetch_calls["n"] == 1, "aged 'none' entry must recompute"
     assert data["volume"] == 16, data
 
-    # ...but a REAL result of the same age is still served from cache.
-    real = json.dumps(sent.result_to_dict(_sample_result(volume=16)))
+    # ...but a "reddit" result of the SAME age is still a cache hit (1h window).
+    real = json.dumps(sent.result_to_dict(_sample_result(volume=16)))  # source defaults 'reddit'
     cache2 = _FakeCache(seed={"sentiment:AAPL": (real, aged)})
     fetch_calls["n"] = 0
-    original = _install(cache2, fetch, score)
+    original = _install(cache2, fetch, lambda t, m: _sample_result(volume=16))
     try:
         data2 = sent.get_sentiment("AAPL")
     finally:
         _restore(original)
-    assert fetch_calls["n"] == 0, "same-age real result must still be a cache hit"
+    assert fetch_calls["n"] == 0, "same-age 'reddit' result must still be a cache hit"
     assert data2 == json.loads(real), data2
 
 

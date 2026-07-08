@@ -74,6 +74,14 @@ export interface SentimentTopItem {
   sentiment: SentimentLabel
 }
 
+// Where the sentiment data came from:
+//   'reddit'    => full text sentiment (net_score/bull/bear/neutral/top populated)
+//   'apewisdom' => post text unavailable; only real Reddit mention-volume data
+//                  (net_score/bull/bear/neutral are 0, top is empty; mentions_prev/
+//                  upvotes/rank carry the volume view's numbers)
+//   'none'      => no discussion found yet
+export type SentimentSource = 'reddit' | 'apewisdom' | 'none'
+
 export interface SentimentResponse {
   ticker: string
   net_score: number // -100..100, >0 bullish, <0 bearish
@@ -83,6 +91,10 @@ export interface SentimentResponse {
   volume: number // 0 => no discussion found yet
   computed_at: string // ISO timestamp
   top: SentimentTopItem[]
+  source: SentimentSource // NEW: which pipeline produced this payload
+  mentions_prev: number | null // apewisdom only: mentions 24h ago
+  upvotes: number | null // apewisdom only: total upvotes
+  rank: number | null // apewisdom only: trending rank
 }
 
 // Error carrying the HTTP status so callers can distinguish, e.g., a 404

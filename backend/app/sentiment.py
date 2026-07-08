@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from . import config, db
+from .apewisdom import get_stats as get_mention_stats
 from .reddit_ingest import Mention, fetch_mentions
 
 logger = logging.getLogger("stockpulse.sentiment")
@@ -39,13 +40,13 @@ _HTTP_TIMEOUT = 30
 
 _SENTIMENTS = ("bullish", "bearish", "neutral")
 
-# Sentiment freshness window. Reddit chatter + LLM scoring is expensive, so a
-# ticker's sentiment is memoized in SQLite for an hour before we recompute.
-# Empty results (volume 0) usually mean the data source was down or quiet, so
-# they get a much shorter window — otherwise an Arctic Shift outage would pin
-# "no discussion found" for a full hour after the source recovers.
-_CACHE_TTL_SECONDS = 60 * 60       # 1h for real results
-_EMPTY_CACHE_TTL_SECONDS = 5 * 60  # 5min for volume-0 results
+# Sentiment freshness window, per data source. Full text sentiment (Reddit
+# posts -> LLM) is expensive and stable, so it's memoized for an hour. The
+# ApeWisdom volume fallback gets a shorter window so we re-probe the richer text
+# source sooner, and an outright miss ("none") expires fast so an upstream
+# outage self-heals within minutes of recovery.
+_TTL_BY_SOURCE = {"reddit": 60 * 60, "apewisdom": 15 * 60, "none": 5 * 60}
+_CACHE_TTL_SECONDS = _TTL_BY_SOURCE["reddit"]  # default / back-compat
 
 _SYSTEM_PROMPT = (
     "You are a precise financial sentiment classifier. You are given a stock "
@@ -76,9 +77,17 @@ class SentimentResult:
     bull: int
     bear: int
     neutral: int
-    volume: int               # relevant mentions scored
+    volume: int               # reddit: relevant mentions scored; apewisdom: total mentions
     computed_at: str          # ISO-8601 UTC
     top: list[ScoredMention] = field(default_factory=list)
+    # Which source produced this result:
+    #   "reddit"    - post text scored by the LLM (net_score/breakdown/top valid)
+    #   "apewisdom" - mention-volume fallback (volume + mentions_prev/upvotes/rank)
+    #   "none"      - nothing available (all zero)
+    source: str = "reddit"
+    mentions_prev: Optional[int] = None   # apewisdom: mentions 24h ago
+    upvotes: Optional[int] = None         # apewisdom: total upvotes
+    rank: Optional[int] = None            # apewisdom: trending rank
 
 
 def _now_iso() -> str:
@@ -253,12 +262,32 @@ def get_sentiment(ticker: str) -> dict[str, Any]:
         except (json.JSONDecodeError, TypeError):
             payload = None  # corrupt cache entry: fall through and recompute
         if payload is not None:
-            ttl = _CACHE_TTL_SECONDS if payload.get("volume") else _EMPTY_CACHE_TTL_SECONDS
+            ttl = _TTL_BY_SOURCE.get(payload.get("source", "reddit"), _CACHE_TTL_SECONDS)
             if age < ttl:
                 return payload
 
+    # Primary: real Reddit post text -> LLM sentiment.
     mentions = fetch_mentions(normalized)
-    result = score_mentions(normalized, mentions)
+    if mentions:
+        result = score_mentions(normalized, mentions)  # source defaults to "reddit"
+        if result.volume == 0:
+            result.source = "none"  # posts found but none relevant -> empty state
+    else:
+        # Fallback: ApeWisdom mention-volume (no post text, so no LLM sentiment).
+        stats = get_mention_stats(normalized)
+        if stats:
+            result = SentimentResult(
+                ticker=normalized, net_score=0.0, bull=0, bear=0, neutral=0,
+                volume=stats["mentions"], computed_at=_now_iso(), top=[],
+                source="apewisdom", mentions_prev=stats.get("mentions_prev"),
+                upvotes=stats.get("upvotes"), rank=stats.get("rank"),
+            )
+        else:
+            result = SentimentResult(
+                ticker=normalized, net_score=0.0, bull=0, bear=0, neutral=0,
+                volume=0, computed_at=_now_iso(), top=[], source="none",
+            )
+
     data = result_to_dict(result)
     db.cache_set(key, json.dumps(data))
     return data

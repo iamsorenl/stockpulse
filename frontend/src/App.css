@@ -580,6 +580,54 @@
   opacity: 0.85;
 }
 
+/* Mention-volume fallback view (ApeWisdom source) */
+.sentiment-volume {
+  gap: 14px;
+}
+.sentiment-volume-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sentiment-volume-value {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+.sentiment-volume-unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sentiment-volume-delta {
+  margin-left: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--code-bg);
+  color: var(--text);
+}
+.sentiment-volume-delta--up {
+  color: #159968;
+  background: rgba(21, 153, 104, 0.1);
+}
+.sentiment-volume-delta--down {
+  color: #d23b3f;
+  background: rgba(210, 59, 63, 0.1);
+}
+.sentiment-volume-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: 0.85;
+}
+
 /* Top posts */
 .sentiment-top {
   list-style: none;

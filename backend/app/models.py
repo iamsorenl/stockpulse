@@ -6,7 +6,7 @@ FastAPI uses these as `response_model`s for validation + docs.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -14,6 +14,7 @@ PriceRange = Literal["1mo", "6mo", "1y", "5y"]
 Trend = Literal["up", "down", "sideways"]
 MentionKind = Literal["post", "comment"]
 Sentiment = Literal["bullish", "bearish", "neutral"]
+SentimentSource = Literal["reddit", "apewisdom", "none"]
 
 
 class SearchResult(BaseModel):
@@ -65,10 +66,14 @@ class ScoredMention(BaseModel):
 
 class SentimentResponse(BaseModel):
     ticker: str
-    net_score: float          # -100..100
+    net_score: float          # -100..100 (meaningful only when source == "reddit")
     bull: int
     bear: int
     neutral: int
-    volume: int               # 0 = no discussion found
+    volume: int               # reddit: relevant mentions; apewisdom: total mentions; none: 0
     computed_at: str          # ISO-8601 string
     top: list[ScoredMention]
+    source: SentimentSource = "reddit"
+    mentions_prev: Optional[int] = None   # apewisdom: mentions 24h ago
+    upvotes: Optional[int] = None         # apewisdom: total upvotes
+    rank: Optional[int] = None            # apewisdom: trending rank
