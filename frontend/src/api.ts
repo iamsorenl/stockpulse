@@ -82,6 +82,37 @@ export interface SentimentTopItem {
 //   'none'      => no discussion found yet
 export type SentimentSource = 'reddit' | 'apewisdom' | 'none'
 
+// ----- Financial news sentiment (separate signal from the Reddit crowd) -----
+
+// One scored headline in the news view. `published_utc` is an epoch-seconds float
+// (may be null when the outlet didn't supply a timestamp).
+export interface NewsArticle {
+  title: string
+  outlet: string // e.g. "Yahoo Finance"
+  url: string
+  published_utc: number | null
+  sentiment: SentimentLabel
+}
+
+// Aggregated financial-news sentiment. `volume` is 0 when no articles were found.
+export interface NewsSentiment {
+  net_score: number // -100..100, >0 bullish, <0 bearish
+  bull: number
+  bear: number
+  neutral: number
+  volume: number // article count; 0 => no news found
+  computed_at: string // ISO timestamp
+  top: NewsArticle[]
+}
+
+// A blended read across the Reddit crowd and financial news. The has_* flags say
+// which sides actually contributed, so the UI can label the blend honestly.
+export interface CombinedSentiment {
+  net_score: number // -100..100
+  has_reddit: boolean
+  has_news: boolean
+}
+
 export interface SentimentResponse {
   ticker: string
   net_score: number // -100..100, >0 bullish, <0 bearish
@@ -95,6 +126,8 @@ export interface SentimentResponse {
   mentions_prev: number | null // apewisdom only: mentions 24h ago
   upvotes: number | null // apewisdom only: total upvotes
   rank: number | null // apewisdom only: trending rank
+  news: NewsSentiment | null // NEW: financial-news sentiment (null when unavailable)
+  combined: CombinedSentiment | null // NEW: blended Reddit + news read
 }
 
 // ----- Sentiment timeline (history) -----

@@ -835,6 +835,80 @@
   overflow: hidden;
 }
 
+/* News sub-section + combined read (live view) */
+.sentiment-subsection {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.sentiment-subhead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sentiment-subhead-title {
+  font-size: 16px;
+  margin: 0;
+  color: var(--text-h);
+}
+.sentiment-subhead-src {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.sentiment-combined {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.sentiment-combined-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.sentiment-combined-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.sentiment-combined-score--bullish {
+  color: #159968;
+  border-color: rgba(21, 153, 104, 0.4);
+  background: rgba(21, 153, 104, 0.08);
+}
+.sentiment-combined-score--bearish {
+  color: #d23b3f;
+  border-color: rgba(210, 59, 63, 0.4);
+  background: rgba(210, 59, 63, 0.08);
+}
+.sentiment-combined-score--neutral {
+  color: var(--text);
+  background: var(--code-bg);
+}
+.sentiment-combined-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sentiment-combined-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sentiment-combined-caption {
+  font-size: 13px;
+  color: var(--text);
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-wrap: wrap;

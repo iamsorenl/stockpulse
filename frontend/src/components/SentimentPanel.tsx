@@ -3,6 +3,8 @@ import {
   ApiError,
   fetchSentiment,
   fetchOnThisDay,
+  type CombinedSentiment,
+  type NewsSentiment,
   type OnThisDayResponse,
   type OnThisDayRunupPoint,
   type SentimentLabel,
@@ -218,6 +220,16 @@ function LiveView({ load }: { load: Load }) {
       {load.state === 'ready' && load.data.source === 'reddit' && (
         <SentimentBody data={load.data} />
       )}
+
+      {load.state === 'ready' &&
+        load.data.news != null &&
+        load.data.news.volume > 0 && <NewsBody news={load.data.news} />}
+
+      {load.state === 'ready' &&
+        load.data.combined != null &&
+        (load.data.combined.has_reddit || load.data.combined.has_news) && (
+          <CombinedRead combined={load.data.combined} />
+        )}
     </>
   )
 }
@@ -372,63 +384,84 @@ function MentionVolumeBody({ data }: { data: SentimentBodyData }) {
   )
 }
 
-function SentimentBody({ data }: { data: SentimentBodyData }) {
-  const tone = toneForScore(data.net_score)
-  const total = data.bull + data.bear + data.neutral
+// Overall net-score badge + sliding gauge. Shared by the crowd and news views so
+// both read identically.
+function ScoreGauge({ net_score }: { net_score: number }) {
+  const tone = toneForScore(net_score)
   // Gauge fill: map -100..100 onto 0..100% so the marker slides along the bar.
-  const gaugePct = Math.min(100, Math.max(0, (data.net_score + 100) / 2))
-  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0)
+  const gaugePct = Math.min(100, Math.max(0, (net_score + 100) / 2))
+  return (
+    <div className="sentiment-overall">
+      <div className={`sentiment-score sentiment-score--${tone}`}>
+        <span className="sentiment-score-value">
+          {net_score > 0 ? '+' : ''}
+          {net_score.toFixed(1)}
+        </span>
+        <span className="sentiment-score-label">{TONE_LABEL[tone]}</span>
+      </div>
+      <div className="sentiment-gauge" aria-hidden="true">
+        <div className="sentiment-gauge-track" />
+        <div
+          className={`sentiment-gauge-marker sentiment-gauge-marker--${tone}`}
+          style={{ left: `${gaugePct}%` }}
+        />
+      </div>
+      <div className="sentiment-gauge-ends" aria-hidden="true">
+        <span>Bearish</span>
+        <span>Bullish</span>
+      </div>
+    </div>
+  )
+}
 
+// Bull / bear / neutral proportion bar + chips. Shared by the crowd and news views.
+function Breakdown({
+  bull,
+  bear,
+  neutral,
+}: {
+  bull: number
+  bear: number
+  neutral: number
+}) {
+  const total = bull + bear + neutral
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0)
+  return (
+    <div className="sentiment-breakdown">
+      <div
+        className="sentiment-bar"
+        role="img"
+        aria-label={`${bull} bullish, ${bear} bearish, ${neutral} neutral`}
+      >
+        <span
+          className="sentiment-bar-seg sentiment-bar-seg--bull"
+          style={{ width: `${pct(bull)}%` }}
+        />
+        <span
+          className="sentiment-bar-seg sentiment-bar-seg--bear"
+          style={{ width: `${pct(bear)}%` }}
+        />
+        <span
+          className="sentiment-bar-seg sentiment-bar-seg--neutral"
+          style={{ width: `${pct(neutral)}%` }}
+        />
+      </div>
+      <div className="sentiment-chips">
+        <span className="sentiment-chip sentiment-chip--bull">{bull} bullish</span>
+        <span className="sentiment-chip sentiment-chip--bear">{bear} bearish</span>
+        <span className="sentiment-chip sentiment-chip--neutral">
+          {neutral} neutral
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function SentimentBody({ data }: { data: SentimentBodyData }) {
   return (
     <div className="sentiment-body">
-      <div className="sentiment-overall">
-        <div className={`sentiment-score sentiment-score--${tone}`}>
-          <span className="sentiment-score-value">
-            {data.net_score > 0 ? '+' : ''}
-            {data.net_score.toFixed(1)}
-          </span>
-          <span className="sentiment-score-label">{TONE_LABEL[tone]}</span>
-        </div>
-        <div className="sentiment-gauge" aria-hidden="true">
-          <div className="sentiment-gauge-track" />
-          <div
-            className={`sentiment-gauge-marker sentiment-gauge-marker--${tone}`}
-            style={{ left: `${gaugePct}%` }}
-          />
-        </div>
-        <div className="sentiment-gauge-ends" aria-hidden="true">
-          <span>Bearish</span>
-          <span>Bullish</span>
-        </div>
-      </div>
-
-      <div className="sentiment-breakdown">
-        <div className="sentiment-bar" role="img" aria-label={`${data.bull} bullish, ${data.bear} bearish, ${data.neutral} neutral`}>
-          <span
-            className="sentiment-bar-seg sentiment-bar-seg--bull"
-            style={{ width: `${pct(data.bull)}%` }}
-          />
-          <span
-            className="sentiment-bar-seg sentiment-bar-seg--bear"
-            style={{ width: `${pct(data.bear)}%` }}
-          />
-          <span
-            className="sentiment-bar-seg sentiment-bar-seg--neutral"
-            style={{ width: `${pct(data.neutral)}%` }}
-          />
-        </div>
-        <div className="sentiment-chips">
-          <span className="sentiment-chip sentiment-chip--bull">
-            {data.bull} bullish
-          </span>
-          <span className="sentiment-chip sentiment-chip--bear">
-            {data.bear} bearish
-          </span>
-          <span className="sentiment-chip sentiment-chip--neutral">
-            {data.neutral} neutral
-          </span>
-        </div>
-      </div>
+      <ScoreGauge net_score={data.net_score} />
+      <Breakdown bull={data.bull} bear={data.bear} neutral={data.neutral} />
 
       <div className="sentiment-meta">
         <span>
@@ -465,6 +498,105 @@ function SentimentBody({ data }: { data: SentimentBodyData }) {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+// Format an epoch-seconds timestamp into a short "Jul 2" day; null/invalid => ''.
+function formatPublished(epochSeconds: number | null): string {
+  if (epochSeconds == null) return ''
+  const d = new Date(epochSeconds * 1000)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+// Financial-news sentiment sub-section. Mirrors the crowd block's gauge +
+// breakdown, then lists scored headlines linking out to each outlet.
+function NewsBody({ news }: { news: NewsSentiment }) {
+  return (
+    <div className="sentiment-body sentiment-subsection">
+      <div className="sentiment-subhead">
+        <h3 className="sentiment-subhead-title">News</h3>
+        <span className="sentiment-subhead-src">from financial news</span>
+      </div>
+
+      <ScoreGauge net_score={news.net_score} />
+      <Breakdown bull={news.bull} bear={news.bear} neutral={news.neutral} />
+
+      <div className="sentiment-meta">
+        <span>
+          {news.volume} article{news.volume === 1 ? '' : 's'}
+        </span>
+        <span className="sentiment-asof">
+          as of {formatComputedAt(news.computed_at)}
+        </span>
+      </div>
+
+      {news.top.length > 0 && (
+        <ul className="sentiment-top">
+          {news.top.map((item, i) => {
+            const published = formatPublished(item.published_utc)
+            return (
+              <li key={`${item.url}-${i}`} className="sentiment-top-item">
+                <a
+                  href={safeHref(item.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="sentiment-top-link"
+                >
+                  <div className="sentiment-top-headline">
+                    <span
+                      className={`sentiment-tag sentiment-tag--${item.sentiment}`}
+                    >
+                      {TONE_LABEL[item.sentiment]}
+                    </span>
+                    <span className="sentiment-top-sub">{item.outlet}</span>
+                    {published && (
+                      <span className="sentiment-top-kind">{published}</span>
+                    )}
+                  </div>
+                  <p className="sentiment-top-text">{item.title}</p>
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// Describe how the combined score was blended, staying honest when only one side
+// contributed so we never imply a Reddit read that doesn't exist.
+function combinedCaption(c: CombinedSentiment): string {
+  if (c.has_reddit && c.has_news) return 'Reddit + News, 50/50'
+  if (c.has_news) return 'News only — Reddit archive unavailable'
+  if (c.has_reddit) return 'Reddit only — no financial news found'
+  return ''
+}
+
+// Compact blended read across the crowd and news signals.
+function CombinedRead({ combined }: { combined: CombinedSentiment }) {
+  const tone = toneForScore(combined.net_score)
+  return (
+    <div className="sentiment-combined">
+      <div className="sentiment-subhead">
+        <h3 className="sentiment-subhead-title">Combined</h3>
+      </div>
+      <div className="sentiment-combined-row">
+        <span
+          className={`sentiment-combined-score sentiment-combined-score--${tone}`}
+        >
+          <span className="sentiment-combined-value">
+            {combined.net_score > 0 ? '+' : ''}
+            {combined.net_score.toFixed(1)}
+          </span>
+          <span className="sentiment-combined-label">{TONE_LABEL[tone]}</span>
+        </span>
+        <span className="sentiment-combined-caption">
+          {combinedCaption(combined)}
+        </span>
+      </div>
     </div>
   )
 }
