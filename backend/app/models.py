@@ -12,6 +12,8 @@ from pydantic import BaseModel
 
 PriceRange = Literal["1mo", "6mo", "1y", "5y"]
 Trend = Literal["up", "down", "sideways"]
+MentionKind = Literal["post", "comment"]
+Sentiment = Literal["bullish", "bearish", "neutral"]
 
 
 class SearchResult(BaseModel):
@@ -49,3 +51,24 @@ class PricesResponse(BaseModel):
     range: PriceRange
     candles: list[Candle]
     indicators: Indicators
+
+
+class ScoredMention(BaseModel):
+    id: str
+    kind: MentionKind
+    subreddit: str
+    score: int
+    permalink: str
+    text: str
+    sentiment: Sentiment
+
+
+class SentimentResponse(BaseModel):
+    ticker: str
+    net_score: float          # -100..100
+    bull: int
+    bear: int
+    neutral: int
+    volume: int               # 0 = no discussion found
+    computed_at: str          # ISO-8601 string
+    top: list[ScoredMention]

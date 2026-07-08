@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import stocks
-from .models import PricesResponse, SearchResponse
+from . import config, sentiment, stocks
+from .models import PricesResponse, SearchResponse, SentimentResponse
 from .symbols import search_symbols
 
 router = APIRouter(prefix="/api")
@@ -44,3 +44,18 @@ def prices(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except stocks.UnknownTickerError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/stocks/{ticker}/sentiment", response_model=SentimentResponse)
+def sentiment_route(ticker: str):
+    """Return Reddit-derived sentiment for `ticker` (cache-first, ~1h window).
+
+    Requires a configured LLM scorer (Groq or Ollama); returns 503 when none is
+    set. A `volume` of 0 means no discussion was found — still a 200 response.
+    """
+    if not config.SENTIMENT_CONFIGURED:
+        raise HTTPException(
+            status_code=503,
+            detail="Sentiment scoring not configured. Set GROQ_API_KEY in backend/.env.",
+        )
+    return sentiment.get_sentiment(ticker)

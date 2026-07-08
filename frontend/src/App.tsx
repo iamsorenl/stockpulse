@@ -9,6 +9,7 @@ import { SearchBox } from './components/SearchBox'
 import { RangeSelector } from './components/RangeSelector'
 import { PriceChart } from './components/PriceChart'
 import { TrendBadge } from './components/TrendBadge'
+import { SentimentPanel } from './components/SentimentPanel'
 import './App.css'
 
 const RANGE_LABELS: Record<PriceRange, string> = {
@@ -135,6 +136,8 @@ function App() {
             </div>
           </section>
         )}
+
+        {ticker && <SentimentPanel key={ticker} ticker={ticker} />}
       </main>
     </div>
   )

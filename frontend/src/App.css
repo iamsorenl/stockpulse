@@ -399,6 +399,258 @@
   }
 }
 
+/* ---------- Reddit sentiment panel ---------- */
+.sentiment {
+  margin-top: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  padding: 20px 22px 22px;
+}
+.sentiment-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.sentiment-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.sentiment-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  text-align: center;
+  color: var(--text);
+}
+.sentiment-status strong {
+  font-size: 16px;
+  color: var(--text-h);
+}
+.sentiment-status--error strong {
+  color: #d23b3f;
+}
+.sentiment-status--muted {
+  background: var(--social-bg);
+  border-radius: 12px;
+}
+
+.sentiment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Overall score + gauge */
+.sentiment-overall {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 6px 20px;
+}
+.sentiment-score {
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  min-width: 108px;
+}
+.sentiment-score--bullish {
+  color: #159968;
+  border-color: rgba(21, 153, 104, 0.4);
+  background: rgba(21, 153, 104, 0.08);
+}
+.sentiment-score--bearish {
+  color: #d23b3f;
+  border-color: rgba(210, 59, 63, 0.4);
+  background: rgba(210, 59, 63, 0.08);
+}
+.sentiment-score--neutral {
+  color: var(--text);
+  background: var(--code-bg);
+}
+.sentiment-score-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sentiment-score-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sentiment-gauge {
+  position: relative;
+  align-self: end;
+  height: 10px;
+}
+.sentiment-gauge-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    #d23b3f 0%,
+    var(--code-bg) 50%,
+    #159968 100%
+  );
+}
+.sentiment-gauge-marker {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  background: var(--text-h);
+  box-shadow: var(--shadow);
+}
+.sentiment-gauge-ends {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Bull / bear / neutral breakdown */
+.sentiment-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sentiment-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+.sentiment-bar-seg--bull {
+  background: #159968;
+}
+.sentiment-bar-seg--bear {
+  background: #d23b3f;
+}
+.sentiment-bar-seg--neutral {
+  background: var(--border);
+}
+.sentiment-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sentiment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--code-bg);
+  color: var(--text);
+}
+.sentiment-chip--bull {
+  color: #159968;
+  background: rgba(21, 153, 104, 0.1);
+}
+.sentiment-chip--bear {
+  color: #d23b3f;
+  background: rgba(210, 59, 63, 0.1);
+}
+
+.sentiment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sentiment-asof {
+  opacity: 0.85;
+}
+
+/* Top posts */
+.sentiment-top {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sentiment-top-link {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.sentiment-top-link:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+.sentiment-top-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sentiment-tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sentiment-tag--bullish {
+  color: #159968;
+  background: rgba(21, 153, 104, 0.12);
+}
+.sentiment-tag--bearish {
+  color: #d23b3f;
+  background: rgba(210, 59, 63, 0.12);
+}
+.sentiment-tag--neutral {
+  color: var(--text);
+  background: var(--code-bg);
+}
+.sentiment-top-sub {
+  font-weight: 600;
+  color: var(--text-h);
+}
+.sentiment-top-kind {
+  text-transform: capitalize;
+}
+.sentiment-top-score {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.sentiment-top-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-h);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-wrap: wrap;

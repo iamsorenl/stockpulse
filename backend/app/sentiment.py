@@ -22,8 +22,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import config
-from .reddit_ingest import Mention
+from . import config, db
+from .reddit_ingest import Mention, fetch_mentions
 
 logger = logging.getLogger("stockpulse.sentiment")
 
@@ -38,6 +38,10 @@ _TOP_N = 5                  # representative posts surfaced to the UI
 _HTTP_TIMEOUT = 30
 
 _SENTIMENTS = ("bullish", "bearish", "neutral")
+
+# Sentiment freshness window. Reddit chatter + LLM scoring is expensive, so a
+# ticker's sentiment is memoized in SQLite for an hour before we recompute.
+_CACHE_TTL_SECONDS = 60 * 60  # 1h
 
 _SYSTEM_PROMPT = (
     "You are a precise financial sentiment classifier. You are given a stock "
@@ -216,4 +220,38 @@ def score_mentions(ticker: str, mentions: list[Mention]) -> SentimentResult:
 def result_to_dict(result: SentimentResult) -> dict[str, Any]:
     """JSON-serializable dict (top mentions expanded)."""
     data = asdict(result)
+    return data
+
+
+def _cache_key(ticker: str) -> str:
+    return f"sentiment:{ticker}"
+
+
+def get_sentiment(ticker: str) -> dict[str, Any]:
+    """Return the sentiment dict for `ticker`, cache-first.
+
+    Serves a fresh cached result (within `_CACHE_TTL_SECONDS`) when available;
+    otherwise fetches Reddit mentions, scores them, caches the JSON, and returns
+    it. Depends on the module-level `fetch_mentions`, `score_mentions`, and `db`
+    so tests can monkeypatch them without touching the network or SQLite.
+
+    A `volume` of 0 ("no discussion found") is a valid, cacheable result.
+    """
+    normalized = (ticker or "").strip().upper()
+    key = _cache_key(normalized)
+
+    cached = db.cache_get(key)
+    if cached is not None:
+        value, created_at = cached
+        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        if age < _CACHE_TTL_SECONDS:
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                pass  # corrupt cache entry: fall through and recompute
+
+    mentions = fetch_mentions(normalized)
+    result = score_mentions(normalized, mentions)
+    data = result_to_dict(result)
+    db.cache_set(key, json.dumps(data))
     return data

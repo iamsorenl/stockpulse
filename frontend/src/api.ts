@@ -61,6 +61,30 @@ export interface PricesResponse {
   indicators: Indicators
 }
 
+export type SentimentLabel = 'bullish' | 'bearish' | 'neutral'
+export type SentimentKind = 'post' | 'comment'
+
+export interface SentimentTopItem {
+  id: string
+  kind: SentimentKind
+  subreddit: string
+  score: number
+  permalink: string
+  text: string
+  sentiment: SentimentLabel
+}
+
+export interface SentimentResponse {
+  ticker: string
+  net_score: number // -100..100, >0 bullish, <0 bearish
+  bull: number
+  bear: number
+  neutral: number
+  volume: number // 0 => no discussion found yet
+  computed_at: string // ISO timestamp
+  top: SentimentTopItem[]
+}
+
 // Error carrying the HTTP status so callers can distinguish, e.g., a 404
 // (unknown ticker) from a network/500 failure and render the right message.
 export class ApiError extends Error {
@@ -135,4 +159,21 @@ export async function getPrices(
     throw new ApiError(res.status, await readErrorDetail(res))
   }
   return (await res.json()) as PricesResponse
+}
+
+// GET /api/stocks/{ticker}/sentiment
+// 503 when sentiment isn't configured (no Groq key) — ApiError with status 503
+// and the backend's detail. 200 returns the aggregated Reddit sentiment.
+export async function fetchSentiment(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<SentimentResponse> {
+  const res = await fetch(
+    apiUrl(`/api/stocks/${encodeURIComponent(ticker)}/sentiment`),
+    { signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  return (await res.json()) as SentimentResponse
 }
