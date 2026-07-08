@@ -12,13 +12,15 @@ Environment variables (all optional; sensible defaults for local dev):
                            Default: http://localhost:5173 (Vite dev server).
 
   --- M2 sentiment integrations (optional; features degrade cleanly if unset) ---
-  REDDIT_CLIENT_ID         Reddit "script" app client id      (reddit.com/prefs/apps)
-  REDDIT_CLIENT_SECRET     Reddit "script" app secret
-  REDDIT_USER_AGENT        Identifying UA string for Reddit API
   GROQ_API_KEY             Groq API key                       (console.groq.com)
   GROQ_MODEL               Groq model id. Default: llama-3.1-8b-instant
   OLLAMA_BASE_URL          Local Ollama endpoint. Default: http://localhost:11434
   OLLAMA_MODEL             Local model for fallback. Default: llama3.1
+  ARCTIC_SHIFT_BASE_URL    Reddit data source (keyless). Default: the public host.
+
+Reddit data comes from Arctic Shift (arctic-shift.photon-reddit.com), a free,
+no-key archive API — Reddit disabled self-serve API keys in 2025, so PRAW is no
+longer viable. The only credential M2 needs is the Groq key (for sentiment).
 """
 
 from __future__ import annotations
@@ -58,9 +60,11 @@ CORS_ORIGINS = [
 
 # --- M2 sentiment integrations -------------------------------------------------
 
-REDDIT_CLIENT_ID = _clean(os.environ.get("REDDIT_CLIENT_ID"))
-REDDIT_CLIENT_SECRET = _clean(os.environ.get("REDDIT_CLIENT_SECRET"))
-REDDIT_USER_AGENT = _clean(os.environ.get("REDDIT_USER_AGENT")) or "StockPulse/0.1"
+# Reddit data source: Arctic Shift (keyless). Overridable only for testing/mirrors.
+ARCTIC_SHIFT_BASE_URL = (
+    _clean(os.environ.get("ARCTIC_SHIFT_BASE_URL"))
+    or "https://arctic-shift.photon-reddit.com/api"
+)
 
 GROQ_API_KEY = _clean(os.environ.get("GROQ_API_KEY"))
 GROQ_MODEL = _clean(os.environ.get("GROQ_MODEL")) or "llama-3.1-8b-instant"
@@ -73,17 +77,13 @@ OLLAMA_ENABLED = _clean(os.environ.get("OLLAMA_BASE_URL")) is not None or _clean
     os.environ.get("OLLAMA_MODEL")
 ) is not None
 
-REDDIT_CONFIGURED = bool(REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET)
 GROQ_CONFIGURED = bool(GROQ_API_KEY)
-# Sentiment needs Reddit for data plus at least one scorer (Groq or Ollama).
-SENTIMENT_CONFIGURED = REDDIT_CONFIGURED and (GROQ_CONFIGURED or OLLAMA_ENABLED)
+# Reddit data (Arctic Shift) needs no key; sentiment just needs a scorer.
+SENTIMENT_CONFIGURED = GROQ_CONFIGURED or OLLAMA_ENABLED
 
 
 def missing_for_sentiment() -> list[str]:
     """Human-readable list of what's still needed to enable sentiment features."""
-    missing: list[str] = []
-    if not REDDIT_CONFIGURED:
-        missing.append("REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET (reddit.com/prefs/apps)")
-    if not (GROQ_CONFIGURED or OLLAMA_ENABLED):
-        missing.append("GROQ_API_KEY (console.groq.com) or an Ollama setup")
-    return missing
+    if SENTIMENT_CONFIGURED:
+        return []
+    return ["GROQ_API_KEY (console.groq.com) or an Ollama setup"]
