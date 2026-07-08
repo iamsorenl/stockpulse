@@ -77,3 +77,48 @@ class SentimentResponse(BaseModel):
     mentions_prev: Optional[int] = None   # apewisdom: mentions 24h ago
     upvotes: Optional[int] = None         # apewisdom: total upvotes
     rank: Optional[int] = None            # apewisdom: trending rank
+
+
+# --- M3 timeline ---------------------------------------------------------------
+
+class SentimentHistoryPoint(BaseModel):
+    date: str                 # UTC YYYY-MM-DD
+    source: SentimentSource
+    net_score: float
+    volume: int
+    bull: int
+    bear: int
+    neutral: int
+
+
+class SentimentHistoryResponse(BaseModel):
+    ticker: str
+    points: list[SentimentHistoryPoint]   # oldest-first; gaps simply absent
+
+
+class OnThisDaySnapshot(BaseModel):
+    date: str
+    computed_at: str
+    source: SentimentSource
+    net_score: float
+    bull: int
+    bear: int
+    neutral: int
+    volume: int
+    mentions_prev: Optional[int] = None
+    upvotes: Optional[int] = None
+    rank: Optional[int] = None
+    top: list[ScoredMention]
+
+
+class OnThisDayRunupPoint(BaseModel):
+    date: str
+    source: SentimentSource
+    net_score: float
+    volume: int
+
+
+class OnThisDayResponse(BaseModel):
+    date: str
+    snapshot: Optional[OnThisDaySnapshot] = None   # null = no data captured that day
+    runup: list[OnThisDayRunupPoint]               # prior 7 days that exist

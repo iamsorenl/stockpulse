@@ -34,6 +34,7 @@ class _FakeCache:
         self.store = dict(seed or {})
         self.get_calls = 0
         self.set_calls = 0
+        self.snapshots = []  # rows passed to snapshot_upsert
 
     def cache_get(self, key):
         self.get_calls += 1
@@ -42,6 +43,9 @@ class _FakeCache:
     def cache_set(self, key, value):
         self.set_calls += 1
         self.store[key] = (value, datetime.now(timezone.utc))
+
+    def snapshot_upsert(self, row):
+        self.snapshots.append(row)
 
 
 def _install(monkey_cache, fetch_fn, score_fn):
@@ -270,6 +274,66 @@ def test_ttl_is_source_aware():
         _restore(original)
     assert fetch_calls["n"] == 0, "same-age 'reddit' result must still be a cache hit"
     assert data2 == json.loads(real), data2
+
+
+@case
+def test_fresh_reddit_compute_writes_snapshot():
+    cache = _FakeCache()
+    original = _install(cache, lambda t: ["m1"], lambda t, m: _sample_result(volume=16))
+    try:
+        sent.get_sentiment("AAPL")
+    finally:
+        _restore(original)
+    assert len(cache.snapshots) == 1, cache.snapshots
+    snap = cache.snapshots[0]
+    assert snap["ticker"] == "AAPL" and snap["source"] == "reddit", snap
+    assert snap["volume"] == 16 and snap["date"], snap
+    assert isinstance(snap["top_json"], str), snap  # top serialized to JSON text
+
+
+@case
+def test_apewisdom_fallback_writes_snapshot():
+    cache = _FakeCache()
+    orig_stats = sent.get_mention_stats
+    original = _install(cache, lambda t: [], lambda t, m: _sample_result())
+    sent.get_mention_stats = lambda t: {
+        "mentions": 216, "mentions_prev": 118, "upvotes": 710, "rank": 4, "name": "NVDA",
+    }
+    try:
+        sent.get_sentiment("NVDA")
+    finally:
+        _restore(original)
+        sent.get_mention_stats = orig_stats
+    assert len(cache.snapshots) == 1, cache.snapshots
+    snap = cache.snapshots[0]
+    assert snap["source"] == "apewisdom" and snap["volume"] == 216, snap
+    assert snap["mentions_prev"] == 118 and snap["upvotes"] == 710 and snap["rank"] == 4, snap
+
+
+@case
+def test_cache_hit_writes_no_snapshot():
+    fresh = json.dumps(sent.result_to_dict(_sample_result(volume=16)))
+    cache = _FakeCache(seed={"sentiment:AAPL": (fresh, datetime.now(timezone.utc))})
+    original = _install(cache, lambda t: ["m1"], lambda t, m: _sample_result())
+    try:
+        sent.get_sentiment("AAPL")
+    finally:
+        _restore(original)
+    assert cache.snapshots == [], "cache hit must not write a snapshot"
+
+
+@case
+def test_none_source_writes_no_snapshot():
+    cache = _FakeCache()
+    orig_stats = sent.get_mention_stats
+    original = _install(cache, lambda t: [], lambda t, m: _sample_result())
+    sent.get_mention_stats = lambda t: None
+    try:
+        sent.get_sentiment("ZZZZ")
+    finally:
+        _restore(original)
+        sent.get_mention_stats = orig_stats
+    assert cache.snapshots == [], "source 'none' must not be snapshotted"
 
 
 def main() -> int:

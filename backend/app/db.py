@@ -26,7 +26,33 @@ CREATE TABLE IF NOT EXISTS cache (
     value      TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+-- One row per (ticker, UTC day): the day's sentiment snapshot. Accumulates over
+-- time to power the M3 timeline / "on this day" views. `source` records how the
+-- day was measured (reddit = LLM-scored post text; apewisdom = mention volume).
+CREATE TABLE IF NOT EXISTS sentiment_snapshots (
+    ticker        TEXT    NOT NULL,
+    date          TEXT    NOT NULL,   -- UTC YYYY-MM-DD
+    computed_at   TEXT    NOT NULL,   -- ISO-8601 UTC of the compute
+    source        TEXT    NOT NULL,   -- reddit | apewisdom
+    net_score     REAL    NOT NULL,
+    bull          INTEGER NOT NULL,
+    bear          INTEGER NOT NULL,
+    neutral       INTEGER NOT NULL,
+    volume        INTEGER NOT NULL,
+    mentions_prev INTEGER,
+    upvotes       INTEGER,
+    rank          INTEGER,
+    top_json      TEXT    NOT NULL DEFAULT '[]',
+    PRIMARY KEY (ticker, date)
+);
 """
+
+# Columns written/read for a snapshot row (order matters for the upsert).
+_SNAPSHOT_COLUMNS = (
+    "ticker", "date", "computed_at", "source", "net_score",
+    "bull", "bear", "neutral", "volume", "mentions_prev", "upvotes", "rank", "top_json",
+)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -93,3 +119,46 @@ def cache_set(key: str, value: str) -> None:
             "created_at = excluded.created_at",
             (key, value, now),
         )
+
+
+# ----- Sentiment snapshots (M3 timeline) ---------------------------------------
+# Kept here so all SQLite access stays in this module. Callers pass/receive plain
+# dicts keyed by the snapshot columns.
+
+
+def snapshot_upsert(row: dict) -> None:
+    """Insert or replace the (ticker, date) snapshot with the values in `row`."""
+    values = [row.get(col) for col in _SNAPSHOT_COLUMNS]
+    placeholders = ", ".join("?" for _ in _SNAPSHOT_COLUMNS)
+    updates = ", ".join(
+        f"{col} = excluded.{col}" for col in _SNAPSHOT_COLUMNS
+        if col not in ("ticker", "date")
+    )
+    with connection() as conn:
+        conn.execute(
+            f"INSERT INTO sentiment_snapshots ({', '.join(_SNAPSHOT_COLUMNS)}) "
+            f"VALUES ({placeholders}) "
+            f"ON CONFLICT(ticker, date) DO UPDATE SET {updates}",
+            values,
+        )
+
+
+def snapshots_get(ticker: str, since: str) -> list[dict]:
+    """Return snapshots for `ticker` on/after `since` (YYYY-MM-DD), oldest-first."""
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sentiment_snapshots WHERE ticker = ? AND date >= ? "
+            "ORDER BY date ASC",
+            (ticker, since),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def snapshot_get_one(ticker: str, date: str) -> Optional[dict]:
+    """Return the snapshot for `ticker` on exactly `date`, or None."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM sentiment_snapshots WHERE ticker = ? AND date = ?",
+            (ticker, date),
+        ).fetchone()
+    return dict(row) if row is not None else None

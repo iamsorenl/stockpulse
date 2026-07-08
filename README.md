@@ -76,6 +76,26 @@ cd frontend && npm run dev
 Open http://localhost:5173. The home page calls the backend `GET /health` and
 shows the result, proving the frontend ↔ backend wiring works.
 
+## Sentiment snapshots (daily timeline)
+
+Sentiment is snapshotted per ticker per UTC day into the `sentiment_snapshots`
+table, building the timeline over time. Snapshots are captured automatically
+whenever a ticker is viewed. To also capture tickers nobody happened to open,
+run the refresh script:
+
+```bash
+cd backend && ./.venv/bin/python -m scripts.snapshot_tickers --tickers AAPL,NVDA,TSLA
+# or, using the env var:
+STOCKPULSE_TRACKED_TICKERS=AAPL,NVDA,TSLA ./.venv/bin/python -m scripts.snapshot_tickers
+```
+
+Optional daily capture via cron (install yourself; the app never touches your
+crontab):
+
+```cron
+0 23 * * *  cd /path/to/stockpulse/backend && STOCKPULSE_TRACKED_TICKERS=AAPL,NVDA,TSLA ./.venv/bin/python -m scripts.snapshot_tickers >> snapshots.log 2>&1
+```
+
 ## How the frontend reaches the backend
 
 Two supported approaches; **the default is the Vite dev proxy**:

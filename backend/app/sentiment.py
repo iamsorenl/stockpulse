@@ -19,7 +19,7 @@ import logging
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from . import config, db
@@ -290,4 +290,91 @@ def get_sentiment(ticker: str) -> dict[str, Any]:
 
     data = result_to_dict(result)
     db.cache_set(key, json.dumps(data))
+    _write_snapshot(data)
     return data
+
+
+def _write_snapshot(data: dict[str, Any]) -> None:
+    """Persist a fresh compute as today's (ticker, UTC date) snapshot (M3 timeline).
+
+    Skips source == "none" (no signal is not zero sentiment). Best-effort: a
+    snapshot failure is logged but never breaks the sentiment response.
+    """
+    if data.get("source") not in ("reddit", "apewisdom"):
+        return
+    row = {
+        "ticker": data["ticker"],
+        "date": datetime.now(timezone.utc).date().isoformat(),
+        "computed_at": data["computed_at"],
+        "source": data["source"],
+        "net_score": data["net_score"],
+        "bull": data["bull"],
+        "bear": data["bear"],
+        "neutral": data["neutral"],
+        "volume": data["volume"],
+        "mentions_prev": data.get("mentions_prev"),
+        "upvotes": data.get("upvotes"),
+        "rank": data.get("rank"),
+        "top_json": json.dumps(data.get("top", [])),
+    }
+    try:
+        db.snapshot_upsert(row)
+    except Exception as exc:  # noqa: BLE001 - snapshotting must never break the response
+        logger.warning("snapshot upsert failed for %s: %s", data.get("ticker"), exc)
+
+
+# ----- Timeline reads (M3: SOR-159 history, SOR-160 on-this-day) ----------------
+
+_MAX_HISTORY_DAYS = 1825  # ~5y, matching the longest price range
+
+
+def get_history(ticker: str, days: int = 90) -> dict[str, Any]:
+    """Return the sentiment snapshot series for `ticker` over the last `days`."""
+    normalized = (ticker or "").strip().upper()
+    days = max(1, min(int(days), _MAX_HISTORY_DAYS))
+    since = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    points = [
+        {
+            "date": r["date"], "source": r["source"], "net_score": r["net_score"],
+            "volume": r["volume"], "bull": r["bull"], "bear": r["bear"], "neutral": r["neutral"],
+        }
+        for r in db.snapshots_get(normalized, since)
+    ]
+    return {"ticker": normalized, "points": points}
+
+
+def _snapshot_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        top = json.loads(row.get("top_json") or "[]")
+    except (json.JSONDecodeError, TypeError):
+        top = []
+    return {
+        "date": row["date"], "computed_at": row["computed_at"], "source": row["source"],
+        "net_score": row["net_score"], "bull": row["bull"], "bear": row["bear"],
+        "neutral": row["neutral"], "volume": row["volume"],
+        "mentions_prev": row.get("mentions_prev"), "upvotes": row.get("upvotes"),
+        "rank": row.get("rank"), "top": top,
+    }
+
+
+def get_on_this_day(ticker: str, date_str: str) -> dict[str, Any]:
+    """Return the snapshot for `date_str` (YYYY-MM-DD) + the prior 7 days' run-up.
+
+    Raises ValueError on a malformed date (the route maps that to HTTP 400). A
+    day with no snapshot returns snapshot=None (not an error).
+    """
+    normalized = (ticker or "").strip().upper()
+    target = datetime.strptime(date_str, "%Y-%m-%d").date()  # ValueError -> 400
+    day = target.isoformat()
+
+    row = db.snapshot_get_one(normalized, day)
+    snapshot = _snapshot_row_to_dict(row) if row is not None else None
+
+    runup_since = (target - timedelta(days=7)).isoformat()
+    runup = [
+        {"date": r["date"], "source": r["source"],
+         "net_score": r["net_score"], "volume": r["volume"]}
+        for r in db.snapshots_get(normalized, runup_since)
+        if r["date"] < day
+    ]
+    return {"date": day, "snapshot": snapshot, "runup": runup}

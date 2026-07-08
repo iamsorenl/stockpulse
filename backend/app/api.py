@@ -9,7 +9,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from . import config, sentiment, stocks
-from .models import PricesResponse, SearchResponse, SentimentResponse
+from .models import (
+    OnThisDayResponse,
+    PricesResponse,
+    SearchResponse,
+    SentimentHistoryResponse,
+    SentimentResponse,
+)
 from .symbols import search_symbols
 
 router = APIRouter(prefix="/api")
@@ -59,3 +65,30 @@ def sentiment_route(ticker: str):
             detail="Sentiment scoring not configured. Set GROQ_API_KEY in backend/.env.",
         )
     return sentiment.get_sentiment(ticker)
+
+
+@router.get("/stocks/{ticker}/sentiment/history", response_model=SentimentHistoryResponse)
+def sentiment_history(
+    ticker: str,
+    days: int = Query(default=90, ge=1, le=1825, description="Look-back window in days."),
+):
+    """Daily sentiment snapshots for `ticker` over the last `days` (oldest-first).
+
+    Reads accumulated snapshots — no live compute — so it's cheap and returns an
+    empty list until history builds up.
+    """
+    return sentiment.get_history(ticker, days)
+
+
+@router.get("/stocks/{ticker}/sentiment/on", response_model=OnThisDayResponse)
+def sentiment_on_this_day(
+    ticker: str,
+    date: str = Query(..., description="Target day as YYYY-MM-DD."),
+):
+    """That day's snapshot (or null) plus the prior 7 days' run-up."""
+    try:
+        return sentiment.get_on_this_day(ticker, date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Invalid date; expected YYYY-MM-DD."
+        ) from exc
