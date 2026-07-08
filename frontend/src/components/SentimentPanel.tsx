@@ -10,6 +10,7 @@ import {
   type SentimentLabel,
   type SentimentResponse,
   type SentimentTopItem,
+  type TrendEvent,
 } from '../api'
 
 interface SentimentPanelProps {
@@ -19,6 +20,9 @@ interface SentimentPanelProps {
   // both feed the same state.
   date: string | null
   onDateChange: (date: string | null) => void
+  // Trend events flagged on the price chart; used for a compact "Signals" line in
+  // the live view (may be empty).
+  events?: TrendEvent[]
 }
 
 type Load =
@@ -95,7 +99,12 @@ function todayYmd(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function SentimentPanel({ ticker, date, onDateChange }: SentimentPanelProps) {
+export function SentimentPanel({
+  ticker,
+  date,
+  onDateChange,
+  events,
+}: SentimentPanelProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [onLoad, setOnLoad] = useState<OnLoad>({ state: 'loading' })
 
@@ -166,17 +175,46 @@ export function SentimentPanel({ ticker, date, onDateChange }: SentimentPanelPro
       {date ? (
         <OnThisDayView load={onLoad} date={date} />
       ) : (
-        <LiveView load={load} />
+        <LiveView load={load} events={events} />
       )}
     </section>
   )
 }
 
+// ---- Signals note ----
+
+// One compact line summarizing the chart's flagged trend events, drawing the eye
+// to the markers. Renders nothing when there are no events.
+function SignalsNote({ events }: { events?: TrendEvent[] }) {
+  if (!events || events.length === 0) return null
+  const diverge = events.filter((e) => e.kind === 'diverge').length
+  const confirm = events.length - diverge
+  const parts: string[] = []
+  if (diverge > 0) {
+    parts.push(`${diverge} divergence${diverge === 1 ? '' : 's'} flagged`)
+  }
+  if (confirm > 0) {
+    parts.push(`${confirm} confirmation${confirm === 1 ? '' : 's'}`)
+  }
+  return (
+    <div className="sentiment-signals">
+      <span className="sentiment-signals-icon" aria-hidden="true">
+        ⚠
+      </span>
+      <span>
+        {parts.join(' · ')} on the chart — see the markers above.
+      </span>
+    </div>
+  )
+}
+
 // ---- Live view (current sentiment) ----
 
-function LiveView({ load }: { load: Load }) {
+function LiveView({ load, events }: { load: Load; events?: TrendEvent[] }) {
   return (
     <>
+      <SignalsNote events={events} />
+
       {load.state === 'loading' && (
         <div className="sentiment-status">
           <span className="spinner" aria-hidden="true" />

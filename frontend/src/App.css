@@ -576,6 +576,25 @@
   border-radius: 12px;
 }
 
+/* Compact "Signals" line linking the panel to the chart's trend-event markers. */
+.sentiment-signals {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(224, 149, 43, 0.35);
+  background: rgba(224, 149, 43, 0.08);
+  font-size: 13px;
+  color: var(--text);
+}
+.sentiment-signals-icon {
+  color: #e0952b;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .sentiment-body {
   display: flex;
   flex-direction: column;

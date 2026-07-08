@@ -3,9 +3,11 @@ import {
   ApiError,
   getPrices,
   fetchSentimentHistory,
+  fetchTrendEvents,
   type PriceRange,
   type PricesResponse,
   type SentimentHistoryPoint,
+  type TrendEvent,
 } from './api'
 import { SearchBox } from './components/SearchBox'
 import { RangeSelector } from './components/RangeSelector'
@@ -43,6 +45,7 @@ function App() {
   const [sentimentHistory, setSentimentHistory] = useState<
     SentimentHistoryPoint[]
   >([])
+  const [trendEvents, setTrendEvents] = useState<TrendEvent[]>([])
   // Selected "on this day" date (YYYY-MM-DD) or null for the live view. Lifted
   // here so a timeline bar-click and the panel's date input share one source.
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -77,6 +80,25 @@ function App() {
       .catch((err: unknown) => {
         if (controller.signal.aborted) return
         setSentimentHistory([])
+        void err
+      })
+    return () => controller.abort()
+  }, [ticker, range])
+
+  // Fetch trend-event markers (confirm/diverge days) for the chart when ticker or
+  // range changes; abort stale requests. A failure just yields no markers — no
+  // error UI, matching the sentiment-overlay behavior above.
+  useEffect(() => {
+    if (!ticker) {
+      setTrendEvents([])
+      return
+    }
+    const controller = new AbortController()
+    fetchTrendEvents(ticker, range, controller.signal)
+      .then((res) => setTrendEvents(res.events))
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        setTrendEvents([])
         void err
       })
     return () => controller.abort()
@@ -172,6 +194,7 @@ function App() {
                   sma20={load.data.indicators.sma20}
                   sma50={load.data.indicators.sma50}
                   sentiment={sentimentHistory}
+                  events={trendEvents}
                   onSelectDate={setSelectedDate}
                 />
               )}
@@ -185,6 +208,7 @@ function App() {
             ticker={ticker}
             date={selectedDate}
             onDateChange={setSelectedDate}
+            events={trendEvents}
           />
         )}
       </main>

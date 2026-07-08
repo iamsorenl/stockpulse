@@ -3,6 +3,7 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   CrosshairMode,
   HistogramSeries,
   LineSeries,
@@ -11,11 +12,18 @@ import {
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type LineData,
   type MouseEventParams,
+  type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import type { Candle, IndicatorPoint, SentimentHistoryPoint } from '../api'
+import type {
+  Candle,
+  IndicatorPoint,
+  SentimentHistoryPoint,
+  TrendEvent,
+} from '../api'
 
 interface PriceChartProps {
   candles: Candle[]
@@ -23,6 +31,8 @@ interface PriceChartProps {
   sma50: IndicatorPoint[]
   // Per-day sentiment timeline, rendered as a histogram overlay (may be empty).
   sentiment?: SentimentHistoryPoint[]
+  // Confirm/diverge days, rendered as markers on the candlestick series (may be empty).
+  events?: TrendEvent[]
   // Fired when a point on the timeline (or any bar) is clicked, with YYYY-MM-DD.
   onSelectDate?: (date: string) => void
 }
@@ -42,6 +52,30 @@ const SENTIMENT_NEUTRAL = '#8b8b96'
 // Dedicated price scale for the histogram so it lives in the bottom ~20% band and
 // never fights the candlesticks for vertical space.
 const SENTIMENT_SCALE_ID = 'sentiment'
+
+// Trend-event marker colors. Diverge (price vs. sentiment disagree) is an amber
+// warning above the bar; confirm (they agree) is a subtle green dot below it.
+const EVENT_DIVERGE_COLOR = '#e0952b'
+const EVENT_CONFIRM_COLOR = '#26a875'
+
+// Map a trend event to a candlestick series marker.
+function eventToMarker(e: TrendEvent): SeriesMarker<Time> {
+  if (e.kind === 'diverge') {
+    return {
+      time: e.date as Time,
+      position: 'aboveBar',
+      color: EVENT_DIVERGE_COLOR,
+      shape: 'arrowDown',
+      text: '⚠',
+    }
+  }
+  return {
+    time: e.date as Time,
+    position: 'belowBar',
+    color: EVENT_CONFIRM_COLOR,
+    shape: 'circle',
+  }
+}
 
 function sentimentColor(p: SentimentHistoryPoint): string {
   if (p.source === 'apewisdom') return SENTIMENT_NEUTRAL
@@ -107,6 +141,7 @@ export function PriceChart({
   sma20,
   sma50,
   sentiment,
+  events,
   onSelectDate,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -116,6 +151,8 @@ export function PriceChart({
   const sma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const sma50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const sentimentSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  // Series-markers plugin attached to the candlestick series (v5 markers API).
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   // Date -> sentiment point, so the crosshair handler (wired once) can look up the
   // hovered bar's details without being re-created on every data change.
   const sentimentByDateRef = useRef<Map<string, SentimentHistoryPoint>>(new Map())
@@ -157,6 +194,10 @@ export function PriceChart({
       wickDownColor: theme.down,
     })
     candleSeriesRef.current = candleSeries
+
+    // v5.2.0 markers are a series primitive, not a series method. Attach the
+    // plugin once here; the data effect below drives it via setMarkers().
+    markersRef.current = createSeriesMarkers(candleSeries, [])
 
     const sma20Series = chart.addSeries(LineSeries, {
       color: SMA20_COLOR,
@@ -291,6 +332,7 @@ export function PriceChart({
       sma20SeriesRef.current = null
       sma50SeriesRef.current = null
       sentimentSeriesRef.current = null
+      markersRef.current = null
     }
   }, [])
 
@@ -343,6 +385,18 @@ export function PriceChart({
     sentimentByDateRef.current = byDate
     sentimentSeries.setData(data)
   }, [sentiment])
+
+  // Push trend-event markers onto the candlestick series. Empty/undefined => clear
+  // (setMarkers([])). Markers must be sorted ascending by time for the plugin.
+  useEffect(() => {
+    const markers = markersRef.current
+    if (!markers) return
+    const data = (events ?? [])
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(eventToMarker)
+    markers.setMarkers(data)
+  }, [events])
 
   return (
     <div className="chart-wrap">

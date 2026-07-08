@@ -185,6 +185,25 @@ export interface OnThisDayResponse {
   runup: OnThisDayRunupPoint[] // prior 7 days that exist, oldest-first
 }
 
+// ----- Price/sentiment trend events (markers on the price chart) -----
+
+// A single flagged day where price action and crowd sentiment either confirm or
+// diverge from each other. `date` aligns to a candle on the price chart.
+//   kind 'confirm' => price and sentiment agree (both bullish or both bearish)
+//   kind 'diverge' => price and sentiment disagree (worth a closer look)
+export interface TrendEvent {
+  date: string // YYYY-MM-DD
+  kind: 'confirm' | 'diverge'
+  note: string // human-readable explanation
+  price_change: number // % change that day
+  sentiment: number // -100..100 net score
+}
+
+export interface TrendEventsResponse {
+  ticker: string
+  events: TrendEvent[] // may be empty (history accrues slowly)
+}
+
 // Error carrying the HTTP status so callers can distinguish, e.g., a 404
 // (unknown ticker) from a network/500 failure and render the right message.
 export class ApiError extends Error {
@@ -315,4 +334,24 @@ export async function fetchOnThisDay(
     throw new ApiError(res.status, await readErrorDetail(res))
   }
   return (await res.json()) as OnThisDayResponse
+}
+
+// GET /api/stocks/{ticker}/trend-events?range=<1mo|6mo|1y|5y>
+// Returns the flagged confirm/diverge days for the range (may be empty). Callers
+// treat a failure as "no markers" — there is no error UI for this overlay.
+export async function fetchTrendEvents(
+  ticker: string,
+  range: PriceRange,
+  signal?: AbortSignal,
+): Promise<TrendEventsResponse> {
+  const res = await fetch(
+    apiUrl(
+      `/api/stocks/${encodeURIComponent(ticker)}/trend-events?range=${encodeURIComponent(range)}`,
+    ),
+    { signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  return (await res.json()) as TrendEventsResponse
 }
