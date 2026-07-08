@@ -49,16 +49,21 @@ class _FakeCache:
 
 
 def _install(monkey_cache, fetch_fn, score_fn):
-    """Swap module-level dependencies; return the original tuple to restore."""
-    original = (sent.db, sent.fetch_mentions, sent.score_mentions)
+    """Swap module-level dependencies; return the original tuple to restore.
+
+    News fetching is stubbed to [] by default so get_sentiment never hits the
+    network for articles during these tests.
+    """
+    original = (sent.db, sent.fetch_mentions, sent.score_mentions, sent.fetch_articles)
     sent.db = monkey_cache
     sent.fetch_mentions = fetch_fn
     sent.score_mentions = score_fn
+    sent.fetch_articles = lambda ticker: []
     return original
 
 
 def _restore(original):
-    sent.db, sent.fetch_mentions, sent.score_mentions = original
+    sent.db, sent.fetch_mentions, sent.score_mentions, sent.fetch_articles = original
 
 
 def _sample_result(ticker="AAPL", volume=16):

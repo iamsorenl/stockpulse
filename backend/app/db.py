@@ -44,14 +44,24 @@ CREATE TABLE IF NOT EXISTS sentiment_snapshots (
     upvotes       INTEGER,
     rank          INTEGER,
     top_json      TEXT    NOT NULL DEFAULT '[]',
+    news_net_score REAL,
+    news_volume    INTEGER,
     PRIMARY KEY (ticker, date)
 );
 """
+
+# Columns added to sentiment_snapshots after its first release; applied as
+# idempotent ALTERs in init_db so existing dev databases pick them up.
+_SNAPSHOT_MIGRATIONS = (
+    ("news_net_score", "REAL"),
+    ("news_volume", "INTEGER"),
+)
 
 # Columns written/read for a snapshot row (order matters for the upsert).
 _SNAPSHOT_COLUMNS = (
     "ticker", "date", "computed_at", "source", "net_score",
     "bull", "bear", "neutral", "volume", "mentions_prev", "upvotes", "rank", "top_json",
+    "news_net_score", "news_volume",
 )
 
 
@@ -84,6 +94,12 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connection() as conn:
         conn.executescript(_SCHEMA)
+        # Bring pre-existing snapshot tables up to date (idempotent).
+        for column, decl in _SNAPSHOT_MIGRATIONS:
+            try:
+                conn.execute(f"ALTER TABLE sentiment_snapshots ADD COLUMN {column} {decl}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 # ----- Generic cache accessors -------------------------------------------------

@@ -34,7 +34,7 @@ def test_classify_batch_parses_and_drops_irrelevant():
         {"i": 1, "relevant": False, "sentiment": "bearish"},   # dropped
         {"i": 2, "relevant": True, "sentiment": "neutral"},
     ]}
-    out = S._classify_batch("AAPL", [_m("a", "x"), _m("b", "y"), _m("c", "z")])
+    out = S._classify_batch("AAPL", ["x", "y", "z"])  # takes plain texts now
     assert out == {0: "bullish", 2: "neutral"}, out
 
 
@@ -87,6 +87,40 @@ def test_no_llm_yields_wellformed_zero():
     assert r.volume == 0 and r.net_score == 0.0, (r.volume, r.net_score)
     assert r.bull == 0 and r.bear == 0 and r.neutral == 0
     assert r.top == []
+
+
+@case
+def test_score_articles_aggregates_and_builds_top():
+    from app.news_ingest import Article
+    def art(i, title, pub):
+        return Article(id=f"u{i}", title=title, summary="", url=f"http://x/{i}",
+                       published_utc=pub, outlet="Yahoo Finance")
+    arts = [art(0, "AAPL soars on earnings", 300), art(1, "AAPL sinks on lawsuit", 200),
+            art(2, "AAPL steady", 100), art(3, "unrelated pizza news", 50)]
+    # mock the classifier: 0 bullish, 1 bearish, 2 neutral, 3 irrelevant (dropped)
+    S._classify_batch = lambda ticker, texts: {0: "bullish", 1: "bearish", 2: "neutral"}
+    news = S.score_articles("aapl", arts)
+    assert (news.bull, news.bear, news.neutral, news.volume) == (1, 1, 1, 3), news
+    assert news.net_score == 0.0, news.net_score
+    assert news.top[0].url == "http://x/0", news.top  # newest-first by published_utc
+    assert all(hasattr(a, "outlet") for a in news.top)
+
+
+@case
+def test_combined_blends_reddit_and_news_5050():
+    # both sides present -> average
+    crowd = {"source": "reddit", "volume": 10, "net_score": 40.0}
+    news = S.NewsSentiment(net_score=-10.0, bull=1, bear=2, neutral=0, volume=3,
+                           computed_at="x", top=[])
+    c = S._combined(crowd, news)
+    assert c == {"net_score": 15.0, "has_reddit": True, "has_news": True}, c
+    # apewisdom crowd has no sentiment -> only news counts
+    crowd2 = {"source": "apewisdom", "volume": 200, "net_score": 0.0}
+    c2 = S._combined(crowd2, news)
+    assert c2 == {"net_score": -10.0, "has_reddit": False, "has_news": True}, c2
+    # nothing -> zero, both flags false
+    c3 = S._combined({"source": "none", "volume": 0, "net_score": 0.0}, None)
+    assert c3 == {"net_score": 0.0, "has_reddit": False, "has_news": False}, c3
 
 
 def main() -> int:

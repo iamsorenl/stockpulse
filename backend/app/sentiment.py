@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from . import config, db
 from .apewisdom import get_stats as get_mention_stats
+from .news_ingest import Article, fetch_articles
 from .reddit_ingest import Mention, fetch_mentions
 
 logger = logging.getLogger("stockpulse.sentiment")
@@ -168,12 +169,16 @@ def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def _classify_batch(ticker: str, batch: list[Mention]) -> dict[int, str]:
-    """Return {local_index: sentiment} for RELEVANT mentions in the batch."""
-    lines = []
-    for i, m in enumerate(batch):
-        text = m.text.replace("\n", " ").strip()[:_TEXT_CLIP]
-        lines.append(f"{i}. {text}")
+def _classify_batch(ticker: str, texts: list[str]) -> dict[int, str]:
+    """Return {local_index: sentiment} for RELEVANT texts in the batch.
+
+    Works for any short text — Reddit mentions or news headlines — so both
+    sources share one LLM classifier.
+    """
+    lines = [
+        f"{i}. {(t or '').replace(chr(10), ' ').strip()[:_TEXT_CLIP]}"
+        for i, t in enumerate(texts)
+    ]
     user = f'Ticker: {ticker}\nTexts:\n' + "\n".join(lines)
 
     parsed = _llm_json(_SYSTEM_PROMPT, user)
@@ -185,7 +190,7 @@ def _classify_batch(ticker: str, batch: list[Mention]) -> dict[int, str]:
             continue
         idx = entry.get("i")
         sentiment = entry.get("sentiment")
-        if isinstance(idx, int) and 0 <= idx < len(batch) and sentiment in _SENTIMENTS:
+        if isinstance(idx, int) and 0 <= idx < len(texts) and sentiment in _SENTIMENTS:
             out[idx] = sentiment
     return out
 
@@ -203,7 +208,7 @@ def score_mentions(ticker: str, mentions: list[Mention]) -> SentimentResult:
     counts = {"bullish": 0, "bearish": 0, "neutral": 0}
     for start in range(0, len(subset), _BATCH_SIZE):
         batch = subset[start : start + _BATCH_SIZE]
-        for idx, sentiment in _classify_batch(normalized, batch).items():
+        for idx, sentiment in _classify_batch(normalized, [m.text for m in batch]).items():
             m = batch[idx]
             counts[sentiment] += 1
             scored.append(
@@ -234,6 +239,56 @@ def result_to_dict(result: SentimentResult) -> dict[str, Any]:
     """JSON-serializable dict (top mentions expanded)."""
     data = asdict(result)
     return data
+
+
+# ----- News sentiment (M5: SOR-166) --------------------------------------------
+
+
+@dataclass
+class ScoredArticle:
+    title: str
+    outlet: str
+    url: str
+    published_utc: float
+    sentiment: str
+
+
+@dataclass
+class NewsSentiment:
+    net_score: float
+    bull: int
+    bear: int
+    neutral: int
+    volume: int
+    computed_at: str
+    top: list[ScoredArticle] = field(default_factory=list)
+
+
+def score_articles(ticker: str, articles: list[Article]) -> NewsSentiment:
+    """Classify + aggregate news articles into a NewsSentiment (same LLM path)."""
+    normalized = (ticker or "").strip().upper()
+    subset = articles[:_MAX_MENTIONS]
+
+    scored: list[ScoredArticle] = []
+    counts = {"bullish": 0, "bearish": 0, "neutral": 0}
+    for start in range(0, len(subset), _BATCH_SIZE):
+        batch = subset[start : start + _BATCH_SIZE]
+        texts = [f"{a.title}. {a.summary}" for a in batch]
+        for idx, sentiment in _classify_batch(normalized, texts).items():
+            a = batch[idx]
+            counts[sentiment] += 1
+            scored.append(ScoredArticle(
+                title=a.title, outlet=a.outlet, url=a.url,
+                published_utc=a.published_utc, sentiment=sentiment,
+            ))
+
+    volume = sum(counts.values())
+    net = round((counts["bullish"] - counts["bearish"]) / volume * 100, 1) if volume else 0.0
+    top = sorted(scored, key=lambda s: s.published_utc, reverse=True)[:_TOP_N]
+    return NewsSentiment(
+        net_score=net, bull=counts["bullish"], bear=counts["bearish"],
+        neutral=counts["neutral"], volume=volume, computed_at=_now_iso(), top=top,
+    )
 
 
 def _cache_key(ticker: str) -> str:
@@ -289,9 +344,35 @@ def get_sentiment(ticker: str) -> dict[str, Any]:
             )
 
     data = result_to_dict(result)
+
+    # News sentiment — independent of Reddit, so it works even while Arctic Shift
+    # is down. Combined score blends the two, shown transparently (50/50).
+    articles = fetch_articles(normalized)
+    news = score_articles(normalized, articles) if articles else None
+    data["news"] = asdict(news) if news is not None else None
+    data["combined"] = _combined(data, news)
+
     db.cache_set(key, json.dumps(data))
     _write_snapshot(data)
     return data
+
+
+def _combined(crowd: dict[str, Any], news: Optional[NewsSentiment]) -> dict[str, Any]:
+    """Blend crowd + news net scores 50/50, keeping each side transparent.
+
+    Crowd sentiment counts only when it's real LLM-scored Reddit text (source
+    'reddit' with volume) — ApeWisdom volume carries no sentiment. Whichever
+    sides have signal are averaged equally; the flags let the UI show the split.
+    """
+    crowd_net = (
+        crowd["net_score"]
+        if crowd.get("source") == "reddit" and crowd.get("volume", 0) > 0
+        else None
+    )
+    news_net = news.net_score if news is not None and news.volume > 0 else None
+    parts = [x for x in (crowd_net, news_net) if x is not None]
+    net = round(sum(parts) / len(parts), 1) if parts else 0.0
+    return {"net_score": net, "has_reddit": crowd_net is not None, "has_news": news_net is not None}
 
 
 def _write_snapshot(data: dict[str, Any]) -> None:
@@ -300,7 +381,10 @@ def _write_snapshot(data: dict[str, Any]) -> None:
     Skips source == "none" (no signal is not zero sentiment). Best-effort: a
     snapshot failure is logged but never breaks the sentiment response.
     """
-    if data.get("source") not in ("reddit", "apewisdom"):
+    news = data.get("news") or {}
+    has_news = bool(news.get("volume", 0))
+    # Snapshot when there's crowd signal OR news signal (either builds the timeline).
+    if data.get("source") not in ("reddit", "apewisdom") and not has_news:
         return
     row = {
         "ticker": data["ticker"],
@@ -316,6 +400,8 @@ def _write_snapshot(data: dict[str, Any]) -> None:
         "upvotes": data.get("upvotes"),
         "rank": data.get("rank"),
         "top_json": json.dumps(data.get("top", [])),
+        "news_net_score": news.get("net_score") if has_news else None,
+        "news_volume": news.get("volume") if has_news else None,
     }
     try:
         db.snapshot_upsert(row)

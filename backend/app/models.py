@@ -64,6 +64,30 @@ class ScoredMention(BaseModel):
     sentiment: Sentiment
 
 
+class NewsArticle(BaseModel):
+    title: str
+    outlet: str
+    url: str
+    published_utc: float
+    sentiment: Sentiment
+
+
+class NewsSentiment(BaseModel):
+    net_score: float
+    bull: int
+    bear: int
+    neutral: int
+    volume: int
+    computed_at: str
+    top: list[NewsArticle]
+
+
+class CombinedSentiment(BaseModel):
+    net_score: float          # 50/50 blend of whichever sides have signal
+    has_reddit: bool
+    has_news: bool
+
+
 class SentimentResponse(BaseModel):
     ticker: str
     net_score: float          # -100..100 (meaningful only when source == "reddit")
@@ -77,6 +101,8 @@ class SentimentResponse(BaseModel):
     mentions_prev: Optional[int] = None   # apewisdom: mentions 24h ago
     upvotes: Optional[int] = None         # apewisdom: total upvotes
     rank: Optional[int] = None            # apewisdom: trending rank
+    news: Optional[NewsSentiment] = None  # M5: article sentiment (independent source)
+    combined: Optional[CombinedSentiment] = None  # M5: transparent 50/50 blend
 
 
 # --- M3 timeline ---------------------------------------------------------------
