@@ -1,6 +1,8 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
+# Safe XML parsing for untrusted external RSS feeds (XXE / billion-laughs guard).
+defusedxml==0.7.1
 yfinance==1.5.1
 # curl_cffi lets yfinance impersonate a browser; without it Yahoo's bot wall
 # returns non-JSON and every fetch fails with "Expecting value: line 1 column 1".
