@@ -402,6 +402,7 @@ def _write_snapshot(data: dict[str, Any]) -> None:
         "top_json": json.dumps(data.get("top", [])),
         "news_net_score": news.get("net_score") if has_news else None,
         "news_volume": news.get("volume") if has_news else None,
+        "captured": "live",
     }
     try:
         _merge_with_existing_snapshot(row, has_news)
@@ -452,6 +453,7 @@ def get_history(ticker: str, days: int = 90) -> dict[str, Any]:
         {
             "date": r["date"], "source": r["source"], "net_score": r["net_score"],
             "volume": r["volume"], "bull": r["bull"], "bear": r["bear"], "neutral": r["neutral"],
+            "captured": r["captured"] if "captured" in r.keys() else "live",
         }
         for r in db.snapshots_get(normalized, since)
     ]
@@ -469,6 +471,7 @@ def _snapshot_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
         "neutral": row["neutral"], "volume": row["volume"],
         "mentions_prev": row.get("mentions_prev"), "upvotes": row.get("upvotes"),
         "rank": row.get("rank"), "top": top,
+        "captured": row["captured"] if "captured" in row.keys() else "live",
     }
 
 

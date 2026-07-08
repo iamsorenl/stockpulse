@@ -107,6 +107,9 @@ class SentimentResponse(BaseModel):
 
 # --- M3 timeline ---------------------------------------------------------------
 
+Captured = Literal["live", "backfill"]
+
+
 class SentimentHistoryPoint(BaseModel):
     date: str                 # UTC YYYY-MM-DD
     source: SentimentSource
@@ -115,6 +118,7 @@ class SentimentHistoryPoint(BaseModel):
     bull: int
     bear: int
     neutral: int
+    captured: Captured = "live"
 
 
 class SentimentHistoryResponse(BaseModel):
@@ -135,6 +139,7 @@ class OnThisDaySnapshot(BaseModel):
     upvotes: Optional[int] = None
     rank: Optional[int] = None
     top: list[ScoredMention]
+    captured: Captured = "live"
 
 
 class OnThisDayRunupPoint(BaseModel):

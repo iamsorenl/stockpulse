@@ -45,6 +45,7 @@ def _seed(ticker, d, source="reddit", net=10.0, vol=5, top=None):
         "source": source, "net_score": net, "bull": 3, "bear": 1, "neutral": 1,
         "volume": vol, "mentions_prev": None, "upvotes": None, "rank": None,
         "top_json": json.dumps(top or []),
+        "news_net_score": None, "news_volume": None, "captured": "live",
     })
 
 

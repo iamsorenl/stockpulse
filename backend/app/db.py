@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sentiment_snapshots (
     top_json      TEXT    NOT NULL DEFAULT '[]',
     news_net_score REAL,
     news_volume    INTEGER,
+    captured       TEXT NOT NULL DEFAULT 'live',  -- 'live' | 'backfill' (provenance)
     PRIMARY KEY (ticker, date)
 );
 """
@@ -55,13 +56,14 @@ CREATE TABLE IF NOT EXISTS sentiment_snapshots (
 _SNAPSHOT_MIGRATIONS = (
     ("news_net_score", "REAL"),
     ("news_volume", "INTEGER"),
+    ("captured", "TEXT NOT NULL DEFAULT 'live'"),
 )
 
 # Columns written/read for a snapshot row (order matters for the upsert).
 _SNAPSHOT_COLUMNS = (
     "ticker", "date", "computed_at", "source", "net_score",
     "bull", "bear", "neutral", "volume", "mentions_prev", "upvotes", "rank", "top_json",
-    "news_net_score", "news_volume",
+    "news_net_score", "news_volume", "captured",
 )
 
 
