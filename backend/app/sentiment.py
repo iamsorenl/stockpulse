@@ -404,9 +404,38 @@ def _write_snapshot(data: dict[str, Any]) -> None:
         "news_volume": news.get("volume") if has_news else None,
     }
     try:
+        _merge_with_existing_snapshot(row, has_news)
         db.snapshot_upsert(row)
     except Exception as exc:  # noqa: BLE001 - snapshotting must never break the response
         logger.warning("snapshot upsert failed for %s: %s", data.get("ticker"), exc)
+
+
+# Higher tier = stronger crowd signal. A weaker same-day compute must not clobber
+# a stronger stored one (e.g. an evening ApeWisdom-only read overwriting the
+# morning's real Reddit sentiment for the date).
+_SOURCE_RANK = {"reddit": 2, "apewisdom": 1, "none": 0}
+
+
+def _merge_with_existing_snapshot(row: dict[str, Any], has_news: bool) -> None:
+    """Mutate `row` in place to preserve the day's best crowd + news signal.
+
+    If today's row already holds a stronger crowd source, keep its crowd fields
+    (only news gets refreshed). If this compute has no news but the stored row
+    did, keep the stored news. Prevents a later low-quality compute from
+    destroying earlier real sentiment for the same UTC day.
+    """
+    existing = db.snapshot_get_one(row["ticker"], row["date"])
+    if not existing:
+        return
+    if _SOURCE_RANK.get(existing["source"], 0) > _SOURCE_RANK.get(row["source"], 0):
+        for field_name in (
+            "source", "net_score", "bull", "bear", "neutral", "volume",
+            "mentions_prev", "upvotes", "rank", "top_json",
+        ):
+            row[field_name] = existing[field_name]
+    if not has_news and existing.get("news_volume"):
+        row["news_net_score"] = existing["news_net_score"]
+        row["news_volume"] = existing["news_volume"]
 
 
 # ----- Timeline reads (M3: SOR-159 history, SOR-160 on-this-day) ----------------

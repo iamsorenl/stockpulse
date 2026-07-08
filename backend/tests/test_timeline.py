@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 from datetime import date, timedelta
@@ -28,17 +29,14 @@ def case(fn):
 
 def _with_temp_db(fn):
     orig = db.DB_PATH
-    tmp = Path(tempfile.mkdtemp()) / "tl_test.db"
-    db.DB_PATH = tmp
+    tmpdir = tempfile.mkdtemp()
+    db.DB_PATH = Path(tmpdir) / "tl_test.db"
     try:
         db.init_db()
         fn()
     finally:
         db.DB_PATH = orig
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
+        shutil.rmtree(tmpdir, ignore_errors=True)  # remove dir + any -wal/-shm files
 
 
 def _seed(ticker, d, source="reddit", net=10.0, vol=5, top=None):

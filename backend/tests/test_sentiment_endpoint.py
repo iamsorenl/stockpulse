@@ -47,6 +47,12 @@ class _FakeCache:
     def snapshot_upsert(self, row):
         self.snapshots.append(row)
 
+    def snapshot_get_one(self, ticker, date):
+        for row in reversed(self.snapshots):
+            if row.get("ticker") == ticker and row.get("date") == date:
+                return row
+        return None
+
 
 def _install(monkey_cache, fetch_fn, score_fn):
     """Swap module-level dependencies; return the original tuple to restore.

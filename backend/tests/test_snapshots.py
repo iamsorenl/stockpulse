@@ -7,13 +7,16 @@ Runs against a throwaway temp SQLite file (not the app DB). Run from backend/:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import db  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from app import db, sentiment as S  # noqa: E402
 
 _CASES: list = []
 
@@ -26,17 +29,14 @@ def case(fn):
 def _with_temp_db(fn):
     """Point db at a fresh temp file, init schema, run fn(), always clean up."""
     orig = db.DB_PATH
-    tmp = Path(tempfile.mkdtemp()) / "snap_test.db"
-    db.DB_PATH = tmp
+    tmpdir = tempfile.mkdtemp()
+    db.DB_PATH = Path(tmpdir) / "snap_test.db"
     try:
         db.init_db()
         fn()
     finally:
         db.DB_PATH = orig
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
+        shutil.rmtree(tmpdir, ignore_errors=True)  # remove dir + any -wal/-shm files
 
 
 def _row(ticker, date, source="reddit", net=10.0, vol=5, **kw):
@@ -95,6 +95,37 @@ def test_apewisdom_fields_persist():
         ))
         got = db.snapshot_get_one("NVDA", "2026-07-01")
         assert got["mentions_prev"] == 118 and got["upvotes"] == 710 and got["rank"] == 4, got
+    _with_temp_db(body)
+
+
+@case
+def test_write_snapshot_preserves_stronger_crowd_source():
+    """A later weak (apewisdom) same-day compute must not clobber real reddit."""
+    def body():
+        today = datetime.now(timezone.utc).date().isoformat()
+        reddit = {
+            "ticker": "AAPL", "computed_at": "morning", "source": "reddit",
+            "net_score": 45.0, "bull": 8, "bear": 2, "neutral": 2, "volume": 12,
+            "mentions_prev": None, "upvotes": None, "rank": None,
+            "top": [{"id": "x"}], "news": None,
+        }
+        S._write_snapshot(reddit)
+        # Evening: Arctic down -> apewisdom-only, WITH some news.
+        ape = {
+            "ticker": "AAPL", "computed_at": "evening", "source": "apewisdom",
+            "net_score": 0.0, "bull": 0, "bear": 0, "neutral": 0, "volume": 200,
+            "mentions_prev": 100, "upvotes": 500, "rank": 3, "top": [],
+            "news": {"net_score": 20.0, "volume": 15},
+        }
+        S._write_snapshot(ape)
+
+        row = db.snapshot_get_one("AAPL", today)
+        # crowd fields preserved from the stronger reddit read...
+        assert row["source"] == "reddit", row["source"]
+        assert row["net_score"] == 45.0 and row["volume"] == 12, row
+        # ...while the fresh news signal is still recorded.
+        assert row["news_net_score"] == 20.0 and row["news_volume"] == 15, row
+
     _with_temp_db(body)
 
 
