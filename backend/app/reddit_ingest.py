@@ -78,10 +78,20 @@ def _get_json(path: str, params: dict[str, Any]) -> Optional[list[dict[str, Any]
 
 
 def _permalink(record: dict[str, Any], subreddit: str, kind: str) -> str:
-    """Prefer Reddit's own permalink; otherwise construct a working URL."""
+    """Prefer Reddit's own permalink; otherwise construct a working URL.
+
+    Only an actual reddit.com path/URL is trusted — this value is rendered in an
+    <a href> on the frontend and persisted in snapshots, so a tampered archive
+    record carrying e.g. a `javascript:` scheme must never flow through. Anything
+    that isn't a reddit path/URL falls back to a safe constructed link.
+    """
     pl = record.get("permalink")
     if isinstance(pl, str) and pl:
-        return "https://www.reddit.com" + pl if pl.startswith("/") else pl
+        if pl.startswith("/"):
+            return "https://www.reddit.com" + pl
+        if pl.startswith(("https://www.reddit.com/", "https://reddit.com/")):
+            return pl
+        # untrusted scheme/host -> ignore and construct a safe URL below
     rid = str(record.get("id", ""))
     if kind == "post":
         return f"https://www.reddit.com/r/{subreddit}/comments/{rid}/"

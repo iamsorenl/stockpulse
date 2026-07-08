@@ -30,6 +30,12 @@ type OnLoad =
   | { state: 'ready'; data: OnThisDayResponse }
   | { state: 'error'; message: string }
 
+// Permalinks originate from a third-party archive; only ever put http(s) URLs in
+// an href so a tampered `javascript:`/`data:` value can't execute on click.
+function safeHref(url: string | undefined | null): string {
+  return url && /^https?:\/\//i.test(url) ? url : '#'
+}
+
 // The subset of fields the body renderers use — satisfied by both the live
 // SentimentResponse and a historical OnThisDaySnapshot.
 interface SentimentBodyData {
@@ -438,7 +444,7 @@ function SentimentBody({ data }: { data: SentimentBodyData }) {
           {data.top.map((item) => (
             <li key={item.id} className="sentiment-top-item">
               <a
-                href={item.permalink}
+                href={safeHref(item.permalink)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="sentiment-top-link"

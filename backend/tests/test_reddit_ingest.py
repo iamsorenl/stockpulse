@@ -115,6 +115,25 @@ def test_prefers_reddit_permalink_field():
 
 
 @case
+def test_untrusted_permalink_scheme_is_rejected():
+    # A tampered archive record with a javascript: (or other non-reddit) permalink
+    # must NOT flow through to the href — we construct a safe reddit URL instead.
+    _isolate_cache()
+    ri._get_json = _stub(
+        posts_by_sub={"stocks": [_post("p1", "stocks", "AAPL", permalink="javascript:alert(1)")]},
+        comments_by_sub={"stocks": [_comment("c1", "stocks", "AAPL", link_id="t3_abc")]},
+    )
+    ms = {m.id: m for m in ri.fetch_mentions("AAPL", use_cache=False)}
+    assert ms["p1"].permalink == "https://www.reddit.com/r/stocks/comments/p1/", ms["p1"].permalink
+    assert ms["p1"].permalink.startswith("https://www.reddit.com/"), ms["p1"].permalink
+    # a full off-site https URL is also rejected (only reddit.com is trusted verbatim)
+    _isolate_cache()
+    ri._get_json = _stub(posts_by_sub={"stocks": [_post("p2", "stocks", "AAPL", permalink="https://evil.example/x")]})
+    ms2 = ri.fetch_mentions("AAPL", use_cache=False)
+    assert ms2[0].permalink == "https://www.reddit.com/r/stocks/comments/p2/", ms2[0].permalink
+
+
+@case
 def test_maintenance_or_error_yields_empty():
     _isolate_cache()
     ri._get_json = lambda path, params: None  # simulate "Under maintenance" / transport error

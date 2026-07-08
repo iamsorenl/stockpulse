@@ -19,6 +19,7 @@ import logging
 import math
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, timedelta
 from typing import Any, Callable, Optional
@@ -95,7 +96,8 @@ def fetch_stooq(ticker: str, range_: str) -> list[dict[str, Any]]:
     an HTML anti-bot challenge, or "N/D" for an unknown symbol).
     """
     _, lookback_days = _RANGE_SPEC[range_]
-    url = f"https://stooq.com/q/d/l/?s={_stooq_symbol(ticker)}&i=d"
+    symbol = urllib.parse.quote(_stooq_symbol(ticker), safe="")
+    url = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
     request = urllib.request.Request(url, headers={"User-Agent": _HTTP_UA})
     try:
         with urllib.request.urlopen(request, timeout=_STOOQ_TIMEOUT_SECONDS) as resp:
