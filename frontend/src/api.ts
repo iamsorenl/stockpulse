@@ -97,6 +97,61 @@ export interface SentimentResponse {
   rank: number | null // apewisdom only: trending rank
 }
 
+// ----- Sentiment timeline (history) -----
+
+// One day of the accumulated sentiment history. `points` is oldest-first and may
+// be empty/sparse — history only accrues from today forward.
+//   source 'reddit'    => net_score/bull/bear/neutral carry a real signal
+//   source 'apewisdom' => volume only (net_score/bull/bear/neutral are 0)
+//   source 'none'      => nothing captured that day
+export interface SentimentHistoryPoint {
+  date: string // YYYY-MM-DD
+  source: SentimentSource
+  net_score: number
+  volume: number
+  bull: number
+  bear: number
+  neutral: number
+}
+
+export interface SentimentHistoryResponse {
+  ticker: string
+  points: SentimentHistoryPoint[]
+}
+
+// ----- Sentiment "on this day" -----
+
+// A prior-day entry in the run-up strip (only days that actually exist).
+export interface OnThisDayRunupPoint {
+  date: string // YYYY-MM-DD
+  source: SentimentSource
+  net_score: number
+  volume: number
+}
+
+// The captured snapshot for a specific day. Shape mirrors SentimentResponse but
+// carries the historical `date` it was captured for.
+export interface OnThisDaySnapshot {
+  date: string // YYYY-MM-DD
+  computed_at: string // ISO timestamp
+  source: SentimentSource
+  net_score: number
+  bull: number
+  bear: number
+  neutral: number
+  volume: number
+  mentions_prev: number | null
+  upvotes: number | null
+  rank: number | null
+  top: SentimentTopItem[]
+}
+
+export interface OnThisDayResponse {
+  date: string // the requested day, YYYY-MM-DD
+  snapshot: OnThisDaySnapshot | null // null => nothing captured that day
+  runup: OnThisDayRunupPoint[] // prior 7 days that exist, oldest-first
+}
+
 // Error carrying the HTTP status so callers can distinguish, e.g., a 404
 // (unknown ticker) from a network/500 failure and render the right message.
 export class ApiError extends Error {
@@ -188,4 +243,43 @@ export async function fetchSentiment(
     throw new ApiError(res.status, await readErrorDetail(res))
   }
   return (await res.json()) as SentimentResponse
+}
+
+// GET /api/stocks/{ticker}/sentiment/history?days=<n>
+// Returns the accumulated per-day sentiment timeline (oldest-first, may be empty).
+export async function fetchSentimentHistory(
+  ticker: string,
+  days: number,
+  signal?: AbortSignal,
+): Promise<SentimentHistoryResponse> {
+  const res = await fetch(
+    apiUrl(
+      `/api/stocks/${encodeURIComponent(ticker)}/sentiment/history?days=${encodeURIComponent(days)}`,
+    ),
+    { signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  return (await res.json()) as SentimentHistoryResponse
+}
+
+// GET /api/stocks/{ticker}/sentiment/on?date=YYYY-MM-DD
+// A malformed date returns 400 (ApiError with status 400). A valid day with no
+// captured data returns { snapshot: null, runup: [...] }.
+export async function fetchOnThisDay(
+  ticker: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<OnThisDayResponse> {
+  const res = await fetch(
+    apiUrl(
+      `/api/stocks/${encodeURIComponent(ticker)}/sentiment/on?date=${encodeURIComponent(date)}`,
+    ),
+    { signal },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res))
+  }
+  return (await res.json()) as OnThisDayResponse
 }

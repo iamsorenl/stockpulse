@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import {
   ApiError,
   getPrices,
+  fetchSentimentHistory,
   type PriceRange,
   type PricesResponse,
+  type SentimentHistoryPoint,
 } from './api'
 import { SearchBox } from './components/SearchBox'
 import { RangeSelector } from './components/RangeSelector'
@@ -19,6 +21,15 @@ const RANGE_LABELS: Record<PriceRange, string> = {
   '5y': 'the past 5 years',
 }
 
+// How many days of sentiment history to request for each price range, so the
+// timeline overlay spans roughly the same window as the visible candles.
+const RANGE_DAYS: Record<PriceRange, number> = {
+  '1mo': 31,
+  '6mo': 186,
+  '1y': 366,
+  '5y': 1825,
+}
+
 type Load =
   | { state: 'idle' }
   | { state: 'loading' }
@@ -29,6 +40,12 @@ function App() {
   const [ticker, setTicker] = useState<string | null>(null)
   const [range, setRange] = useState<PriceRange>('6mo')
   const [load, setLoad] = useState<Load>({ state: 'idle' })
+  const [sentimentHistory, setSentimentHistory] = useState<
+    SentimentHistoryPoint[]
+  >([])
+  // Selected "on this day" date (YYYY-MM-DD) or null for the live view. Lifted
+  // here so a timeline bar-click and the panel's date input share one source.
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   // Fetch prices whenever the selected ticker or range changes.
   useEffect(() => {
@@ -46,6 +63,29 @@ function App() {
       })
     return () => controller.abort()
   }, [ticker, range])
+
+  // Fetch the sentiment timeline for the overlay when ticker or range changes;
+  // abort stale requests. A failure just leaves the overlay empty (no error UI).
+  useEffect(() => {
+    if (!ticker) {
+      setSentimentHistory([])
+      return
+    }
+    const controller = new AbortController()
+    fetchSentimentHistory(ticker, RANGE_DAYS[range], controller.signal)
+      .then((res) => setSentimentHistory(res.points))
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        setSentimentHistory([])
+        void err
+      })
+    return () => controller.abort()
+  }, [ticker, range])
+
+  // Reset any open "on this day" view when the ticker changes.
+  useEffect(() => {
+    setSelectedDate(null)
+  }, [ticker])
 
   const last =
     load.state === 'ready' && load.data.candles.length > 0
@@ -131,13 +171,22 @@ function App() {
                   candles={load.data.candles}
                   sma20={load.data.indicators.sma20}
                   sma50={load.data.indicators.sma50}
+                  sentiment={sentimentHistory}
+                  onSelectDate={setSelectedDate}
                 />
               )}
             </div>
           </section>
         )}
 
-        {ticker && <SentimentPanel key={ticker} ticker={ticker} />}
+        {ticker && (
+          <SentimentPanel
+            key={ticker}
+            ticker={ticker}
+            date={selectedDate}
+            onDateChange={setSelectedDate}
+          />
+        )}
       </main>
     </div>
   )

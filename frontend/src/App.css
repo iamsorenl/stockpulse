@@ -295,6 +295,11 @@
   background: linear-gradient(#159968 50%, #d23b3f 50%);
   border-radius: 2px;
 }
+.legend-swatch--histogram {
+  height: 10px;
+  width: 8px;
+  border-radius: 1px;
+}
 .chart-container {
   position: relative;
   width: 100%;
@@ -360,6 +365,31 @@
   color: var(--text-h);
   font-variant-numeric: tabular-nums;
 }
+.chart-tooltip .tt-sentiment {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text);
+  flex-wrap: wrap;
+}
+.chart-tooltip .tt-sentiment-src {
+  font-weight: 600;
+  color: var(--text-h);
+}
+.chart-tooltip .tt-sentiment-grid {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px 8px;
+  flex-wrap: wrap;
+}
+.chart-tooltip .tt-sentiment-grid b {
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Loading / error states */
 .chart-status {
@@ -409,13 +439,119 @@
 }
 .sentiment-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 .sentiment-title {
   font-size: 20px;
   margin: 0;
+}
+
+/* Day picker + back-to-live control */
+.sentiment-daypick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sentiment-daypick-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sentiment-date-input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  outline: none;
+  color-scheme: light dark;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sentiment-date-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.sentiment-back-btn {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sentiment-back-btn:hover {
+  background: var(--accent-bg);
+  filter: brightness(1.05);
+}
+
+/* Run-up strip (prior days) */
+.runup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.runup-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.runup-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.runup-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.runup-track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 54px;
+}
+.runup-bar {
+  width: 60%;
+  max-width: 22px;
+  min-height: 4px;
+  border-radius: 3px 3px 0 0;
+  background: var(--border);
+}
+.runup-bar--up {
+  background: #159968;
+}
+.runup-bar--down {
+  background: #d23b3f;
+}
+.runup-bar--neutral {
+  background: #8b8b96;
+}
+.runup-date {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .sentiment-status {
