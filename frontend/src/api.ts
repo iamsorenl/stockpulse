@@ -82,6 +82,11 @@ export interface SentimentTopItem {
 //   'none'      => no discussion found yet
 export type SentimentSource = 'reddit' | 'apewisdom' | 'none'
 
+// How a sentiment snapshot was captured:
+//   'live'     => captured that day, as the day happened
+//   'backfill' => reconstructed from historical archives after the fact
+export type Captured = 'live' | 'backfill'
+
 // ----- Financial news sentiment (separate signal from the Reddit crowd) -----
 
 // One scored headline in the news view. `published_utc` is an epoch-seconds float
@@ -145,6 +150,7 @@ export interface SentimentHistoryPoint {
   bull: number
   bear: number
   neutral: number
+  captured: Captured // 'live' captured that day vs 'backfill' reconstructed later
 }
 
 export interface SentimentHistoryResponse {
@@ -177,6 +183,7 @@ export interface OnThisDaySnapshot {
   upvotes: number | null
   rank: number | null
   top: SentimentTopItem[]
+  captured: Captured // 'live' captured that day vs 'backfill' reconstructed later
 }
 
 export interface OnThisDayResponse {

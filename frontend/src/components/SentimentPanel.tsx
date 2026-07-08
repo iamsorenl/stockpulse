@@ -304,6 +304,7 @@ function OnThisDayView({ load, date }: { load: OnLoad; date: string }) {
 
       {load.state === 'ready' && load.data.snapshot !== null && (
         <div className="sentiment-body">
+          {load.data.snapshot.captured === 'backfill' && <BackfilledBadge />}
           {load.data.snapshot.source === 'none' ? (
             <div className="sentiment-status sentiment-status--muted">
               <strong>No Reddit discussion that day</strong>
@@ -320,6 +321,20 @@ function OnThisDayView({ load, date }: { load: OnLoad; date: string }) {
         </div>
       )}
     </>
+  )
+}
+
+// Small muted provenance tag shown on the "on this day" view when the snapshot was
+// reconstructed from historical archives rather than captured live that day. Live
+// snapshots (the default) render nothing.
+function BackfilledBadge() {
+  return (
+    <span
+      className="sentiment-backfill-badge"
+      title="Reconstructed from historical archives after the fact — not captured live that day."
+    >
+      backfilled
+    </span>
   )
 }
 

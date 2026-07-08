@@ -77,11 +77,34 @@ function eventToMarker(e: TrendEvent): SeriesMarker<Time> {
   }
 }
 
-function sentimentColor(p: SentimentHistoryPoint): string {
+// Base signal color for a day (green/red/gray), independent of how it was captured.
+function sentimentBaseColor(p: SentimentHistoryPoint): string {
   if (p.source === 'apewisdom') return SENTIMENT_NEUTRAL
   if (p.net_score > 10) return SENTIMENT_UP
   if (p.net_score < -10) return SENTIMENT_DOWN
   return SENTIMENT_NEUTRAL
+}
+
+// Opacity applied to backfilled bars so reconstructed days read as slightly muted
+// vs. live days — a subtle honesty marker without changing the signal color.
+const BACKFILL_ALPHA = 0.45
+
+// Convert a #rrggbb hex to an rgba() string at the given alpha. Falls back to the
+// input untouched if it isn't a 6-digit hex (all our constants are).
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
+  if (!m) return hex
+  const r = parseInt(m[1], 16)
+  const g = parseInt(m[2], 16)
+  const b = parseInt(m[3], 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Final per-bar fill: live days use the full signal color; backfilled days get the
+// same hue at reduced opacity so they're distinguishable but still readable.
+function sentimentColor(p: SentimentHistoryPoint): string {
+  const base = sentimentBaseColor(p)
+  return p.captured === 'backfill' ? withAlpha(base, BACKFILL_ALPHA) : base
 }
 
 // lightweight-charts hands time back as a business-day string, a {year,month,day}
