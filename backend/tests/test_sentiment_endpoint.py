@@ -214,6 +214,50 @@ def test_zero_volume_is_valid_result():
     assert cache.set_calls == 1, "zero-volume result is still cached"
 
 
+@case
+def test_empty_result_expires_faster_than_real_result():
+    # A volume-0 entry older than the short empty-TTL (but well inside the 1h
+    # real-result TTL) must be recomputed — otherwise a data-source outage would
+    # pin "no discussion found" for a full hour after the source recovers.
+    aged = datetime.now(timezone.utc) - timedelta(
+        seconds=sent._EMPTY_CACHE_TTL_SECONDS + 60
+    )
+    empty = json.dumps(sent.result_to_dict(SentimentResult(
+        ticker="AAPL", net_score=0.0, bull=0, bear=0, neutral=0,
+        volume=0, computed_at="2026-07-08T00:00:00+00:00", top=[],
+    )))
+    cache = _FakeCache(seed={"sentiment:AAPL": (empty, aged)})
+    fetch_calls = {"n": 0}
+
+    def fetch(ticker):
+        fetch_calls["n"] += 1
+        return ["m1"]
+
+    def score(ticker, mentions):
+        return _sample_result(volume=16)
+
+    original = _install(cache, fetch, score)
+    try:
+        data = sent.get_sentiment("AAPL")
+    finally:
+        _restore(original)
+
+    assert fetch_calls["n"] == 1, "aged empty entry must trigger recompute"
+    assert data["volume"] == 16, data
+
+    # ...but a REAL result of the same age is still served from cache.
+    real = json.dumps(sent.result_to_dict(_sample_result(volume=16)))
+    cache2 = _FakeCache(seed={"sentiment:AAPL": (real, aged)})
+    fetch_calls["n"] = 0
+    original = _install(cache2, fetch, score)
+    try:
+        data2 = sent.get_sentiment("AAPL")
+    finally:
+        _restore(original)
+    assert fetch_calls["n"] == 0, "same-age real result must still be a cache hit"
+    assert data2 == json.loads(real), data2
+
+
 def main() -> int:
     failures = 0
     for fn in _CASES:

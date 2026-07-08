@@ -41,7 +41,11 @@ _SENTIMENTS = ("bullish", "bearish", "neutral")
 
 # Sentiment freshness window. Reddit chatter + LLM scoring is expensive, so a
 # ticker's sentiment is memoized in SQLite for an hour before we recompute.
-_CACHE_TTL_SECONDS = 60 * 60  # 1h
+# Empty results (volume 0) usually mean the data source was down or quiet, so
+# they get a much shorter window — otherwise an Arctic Shift outage would pin
+# "no discussion found" for a full hour after the source recovers.
+_CACHE_TTL_SECONDS = 60 * 60       # 1h for real results
+_EMPTY_CACHE_TTL_SECONDS = 5 * 60  # 5min for volume-0 results
 
 _SYSTEM_PROMPT = (
     "You are a precise financial sentiment classifier. You are given a stock "
@@ -244,11 +248,14 @@ def get_sentiment(ticker: str) -> dict[str, Any]:
     if cached is not None:
         value, created_at = cached
         age = (datetime.now(timezone.utc) - created_at).total_seconds()
-        if age < _CACHE_TTL_SECONDS:
-            try:
-                return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
-                pass  # corrupt cache entry: fall through and recompute
+        try:
+            payload = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            payload = None  # corrupt cache entry: fall through and recompute
+        if payload is not None:
+            ttl = _CACHE_TTL_SECONDS if payload.get("volume") else _EMPTY_CACHE_TTL_SECONDS
+            if age < ttl:
+                return payload
 
     mentions = fetch_mentions(normalized)
     result = score_mentions(normalized, mentions)
