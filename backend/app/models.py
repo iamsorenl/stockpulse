@@ -148,3 +148,18 @@ class OnThisDayResponse(BaseModel):
     date: str
     snapshot: Optional[OnThisDaySnapshot] = None   # null = no data captured that day
     runup: list[OnThisDayRunupPoint]               # prior 7 days that exist
+
+
+# --- M5 combined trend signals -------------------------------------------------
+
+class TrendEvent(BaseModel):
+    date: str
+    kind: Literal["confirm", "diverge"]
+    note: str
+    price_change: float   # percent over the momentum window
+    sentiment: float      # daily sentiment level
+
+
+class TrendEventsResponse(BaseModel):
+    ticker: str
+    events: list[TrendEvent]

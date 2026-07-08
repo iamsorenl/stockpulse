@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import config, sentiment, stocks
+from . import config, sentiment, stocks, trends
 from .models import (
     OnThisDayResponse,
     PricesResponse,
     SearchResponse,
     SentimentHistoryResponse,
     SentimentResponse,
+    TrendEventsResponse,
 )
 from .symbols import search_symbols
 
@@ -92,3 +93,15 @@ def sentiment_on_this_day(
         raise HTTPException(
             status_code=400, detail="Invalid date; expected YYYY-MM-DD."
         ) from exc
+
+
+@router.get("/stocks/{ticker}/trend-events", response_model=TrendEventsResponse)
+def trend_events(
+    ticker: str,
+    range: str = Query(default="6mo", description="Time range: 1mo, 6mo, 1y, 5y."),
+):
+    """Days where price momentum and sentiment confirm or diverge.
+
+    Reads accumulated snapshots + prices — empty until enough history builds up.
+    """
+    return trends.get_trend_events(ticker, range)
