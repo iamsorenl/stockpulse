@@ -11,6 +11,17 @@ Environment variables (all optional; sensible defaults for local dev):
   STOCKPULSE_CORS_ORIGINS  Comma-separated allowed browser origins.
                            Default: http://localhost:5173 (Vite dev server).
 
+  --- Rate limiting (protects the shared Groq free-tier quota) --------------
+  STOCKPULSE_RATE_LIMIT_GENERAL           Per-IP requests per window for /api.
+                                           Default: 20
+  STOCKPULSE_RATE_LIMIT_SENTIMENT         Per-IP requests per window for the
+                                           sentiment endpoint (can trigger an
+                                           LLM call). Default: 3
+  STOCKPULSE_RATE_LIMIT_WINDOW_SECONDS    Sliding window size, seconds.
+                                           Default: 60
+  STOCKPULSE_DAILY_LLM_CAP                Max Groq calls per UTC day, across
+                                           all clients. Default: 300
+
   --- M2 sentiment integrations (optional; features degrade cleanly if unset) ---
   GROQ_API_KEY             Groq API key                       (console.groq.com)
   GROQ_MODEL               Groq model id. Default: llama-3.1-8b-instant
@@ -57,6 +68,16 @@ CORS_ORIGINS = [
     for origin in os.environ.get("STOCKPULSE_CORS_ORIGINS", _default_origins).split(",")
     if origin.strip()
 ]
+
+# --- Rate limiting ---------------------------------------------------------------
+
+RATE_LIMIT_GENERAL = int(os.environ.get("STOCKPULSE_RATE_LIMIT_GENERAL", "20"))
+RATE_LIMIT_SENTIMENT = int(os.environ.get("STOCKPULSE_RATE_LIMIT_SENTIMENT", "3"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("STOCKPULSE_RATE_LIMIT_WINDOW_SECONDS", "60"))
+
+# Global daily ceiling on Groq calls (all clients combined), enforced in
+# sentiment._groq_complete -- the one chokepoint all Groq calls route through.
+DAILY_LLM_CAP = int(os.environ.get("STOCKPULSE_DAILY_LLM_CAP", "300"))
 
 # --- M2 sentiment integrations -------------------------------------------------
 

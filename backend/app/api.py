@@ -6,9 +6,9 @@ Mounted under the FastAPI app in main.py. All paths live beneath /api except
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from . import config, sentiment, stocks, trends
+from . import config, ratelimit, sentiment, stocks, trends
 from .models import (
     OnThisDayResponse,
     PricesResponse,
@@ -19,7 +19,9 @@ from .models import (
 )
 from .symbols import search_symbols
 
-router = APIRouter(prefix="/api")
+# Every /api route gets the general per-IP limit; the sentiment endpoint (the
+# only one that can trigger an LLM call) additionally gets a stricter one.
+router = APIRouter(prefix="/api", dependencies=[Depends(ratelimit.enforce_general)])
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -53,7 +55,11 @@ def prices(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/stocks/{ticker}/sentiment", response_model=SentimentResponse)
+@router.get(
+    "/stocks/{ticker}/sentiment",
+    response_model=SentimentResponse,
+    dependencies=[Depends(ratelimit.enforce_sentiment)],
+)
 def sentiment_route(ticker: str):
     """Return Reddit-derived sentiment for `ticker` (cache-first, ~1h window).
 

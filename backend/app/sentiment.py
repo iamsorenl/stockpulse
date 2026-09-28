@@ -95,8 +95,37 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class _DailyCap:
+    """Global counter of Groq calls, resetting at UTC midnight.
+
+    Single-instance, in-memory (matches the deploy target). When the cap is
+    hit, `_groq_complete` returns None like any other Groq failure, so callers
+    fall through to Ollama / the ApeWisdom volume fallback / a cached result.
+    """
+
+    def __init__(self) -> None:
+        self._date = None
+        self._count = 0
+
+    def try_consume(self) -> bool:
+        today = datetime.now(timezone.utc).date()
+        if self._date != today:
+            self._date = today
+            self._count = 0
+        if self._count >= config.DAILY_LLM_CAP:
+            return False
+        self._count += 1
+        return True
+
+
+_groq_daily_cap = _DailyCap()
+
+
 def _groq_complete(system: str, user: str) -> Optional[str]:
     if not config.GROQ_CONFIGURED:
+        return None
+    if not _groq_daily_cap.try_consume():
+        logger.warning("groq daily cap (%d) reached; skipping call", config.DAILY_LLM_CAP)
         return None
     body = json.dumps(
         {

@@ -157,6 +157,39 @@ Symbol OR company-name match. Empty list on no match — never an error.
 - `trend` — one of `"up"`, `"down"`, `"sideways"`.
 - Unknown ticker → **HTTP 404** with `{ "detail": "..." }` (clear message).
 
+## Deploy (Render)
+
+Single Render web service serves both the API and the built frontend at one
+URL — `backend/app/main.py` mounts `frontend/dist` at `/` (after `/api` and
+`/health`) with an SPA fallback to `index.html`, so the frontend's default
+relative-URL API calls just work same-origin.
+
+1. Sign in to [Render](https://render.com) with GitHub.
+2. **New** → **Blueprint** → pick the `iamsorenl/stockpulse` repo. Render
+   reads `render.yaml` at the repo root and provisions one free-plan web
+   service.
+3. When prompted, paste your `GROQ_API_KEY` (from console.groq.com) — it's
+   marked `sync: false` in the blueprint, so Render asks for it rather than
+   reading it from the repo.
+4. Deploy. First boot installs backend + frontend deps and runs `npm run
+   build`, so it's slower than a warm deploy.
+
+Notes:
+- **Free-plan cold start**: the instance spins down after inactivity; the
+  first request after idle can take ~50s while it spins back up.
+- **SQLite is an ephemeral cache there.** Render's free plan has no persistent
+  disk, so `backend/stockpulse.db` (the price/sentiment cache + snapshot
+  history) resets on every deploy/restart — it's a cache, not a database of
+  record.
+- **Yahoo often blocks datacenter IPs** (the free plan's), which can make
+  `yfinance` fail from Render even though it works fine locally. Price
+  fetching already falls back to Stooq's free, keyless daily CSV endpoint in
+  `backend/app/providers.py` when Yahoo yields nothing, so prices still load.
+- Rate limiting and the daily Groq call cap (see `backend/.env.example`)
+  protect the shared free-tier Groq key from one client burning the quota;
+  they're in-memory and single-instance, matching the free plan's one
+  instance.
+
 ## Charting
 
 `lightweight-charts` is installed as a frontend dependency for later stages
