@@ -24,7 +24,7 @@ Environment variables (all optional; sensible defaults for local dev):
 
   --- M2 sentiment integrations (optional; features degrade cleanly if unset) ---
   GROQ_API_KEY             Groq API key                       (console.groq.com)
-  GROQ_MODEL               Groq model id. Default: llama-3.1-8b-instant
+  GROQ_MODEL               Groq model id. Default: openai/gpt-oss-20b
   OLLAMA_BASE_URL          Local Ollama endpoint. Default: http://localhost:11434
   OLLAMA_MODEL             Local model for fallback. Default: llama3.1
   ARCTIC_SHIFT_BASE_URL    Reddit data source (keyless). Default: the public host.
@@ -88,7 +88,7 @@ ARCTIC_SHIFT_BASE_URL = (
 )
 
 GROQ_API_KEY = _clean(os.environ.get("GROQ_API_KEY"))
-GROQ_MODEL = _clean(os.environ.get("GROQ_MODEL")) or "llama-3.1-8b-instant"
+GROQ_MODEL = _clean(os.environ.get("GROQ_MODEL")) or "openai/gpt-oss-20b"
 
 OLLAMA_BASE_URL = _clean(os.environ.get("OLLAMA_BASE_URL")) or "http://localhost:11434"
 OLLAMA_MODEL = _clean(os.environ.get("OLLAMA_MODEL")) or "llama3.1"
