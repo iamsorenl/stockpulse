@@ -650,6 +650,9 @@ function CombinedRead({ combined }: { combined: CombinedSentiment }) {
           {combinedCaption(combined)}
         </span>
       </div>
+      <p className="sentiment-disclaimer">
+        Reflects public sentiment and price history, not a recommendation.
+      </p>
     </div>
   )
 }
