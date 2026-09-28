@@ -1,0 +1,23 @@
+# Render Blueprint: single web service serving both the FastAPI API and the
+# built frontend (see backend/app/main.py's static-file mount) at one URL.
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo -> paste
+# GROQ_API_KEY when prompted. See README "Deploy (Render)" for details.
+services:
+  - type: web
+    name: stockpulse
+    runtime: python
+    plan: free
+    buildCommand: >-
+      pip install -r backend/requirements.txt &&
+      cd frontend && npm install && npm run build
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: GROQ_API_KEY
+        sync: false
