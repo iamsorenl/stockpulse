@@ -220,8 +220,8 @@ function App() {
         </p>
         <p>
           Prices via Yahoo Finance (unofficial) and Stooq. Sentiment from public
-          Reddit posts, ApeWisdom, and news RSS, scored by an LLM. Built with
-          Llama, served by Groq. Not affiliated with or endorsed by any of
+          Reddit posts, ApeWisdom, and news RSS, scored by gpt-oss-20b
+          via Groq. Not affiliated with or endorsed by any of
           these.
         </p>
         <p>
