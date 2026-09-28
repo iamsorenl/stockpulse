@@ -212,6 +212,24 @@ function App() {
           />
         )}
       </main>
+      <footer className="site-footer">
+        <p>
+          For informational and educational purposes only. Not financial or
+          investment advice. Data may be delayed, incomplete, or inaccurate,
+          and is provided without warranty.
+        </p>
+        <p>
+          Prices via Yahoo Finance (unofficial) and Stooq. Sentiment from public
+          Reddit posts, ApeWisdom, and news RSS, scored by an LLM. Built with
+          Llama, served by Groq. Not affiliated with or endorsed by any of
+          these.
+        </p>
+        <p>
+          No accounts, cookies, or analytics. The host may log IP addresses for
+          security. A free hobby project by{' '}
+          <a href="https://github.com/iamsorenl/stockpulse">Soren Larsen</a>.
+        </p>
+      </footer>
     </div>
   )
 }

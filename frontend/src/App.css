@@ -957,3 +957,23 @@
     flex-basis: 100%;
   }
 }
+
+.site-footer {
+  max-width: 960px;
+  margin: 48px auto 24px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.site-footer p {
+  margin: 0 0 8px;
+}
+
+.sentiment-disclaimer {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text);
+}
