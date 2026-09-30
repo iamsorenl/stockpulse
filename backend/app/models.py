@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 PriceRange = Literal["1mo", "6mo", "1y", "5y"]
 Trend = Literal["up", "down", "sideways"]
@@ -168,3 +168,14 @@ class TrendEvent(BaseModel):
 class TrendEventsResponse(BaseModel):
     ticker: str
     events: list[TrendEvent]
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    # Hard abuse ceiling only; chat.answer truncates each message for the prompt.
+    content: str = Field(max_length=20000)
+
+
+class ChatRequest(BaseModel):
+    ticker: str = Field(pattern=r"^[A-Za-z0-9.\-^=]{1,15}$")
+    messages: list[ChatMessage] = Field(min_length=1, max_length=200)

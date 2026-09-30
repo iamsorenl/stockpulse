@@ -68,5 +68,5 @@ def enforce_sentiment(request: Request) -> None:
     if not _sentiment.allow(client_ip(request)):
         raise HTTPException(
             status_code=429,
-            detail="Sentiment rate limit reached. Please try again in a minute.",
+            detail="AI request limit reached. Please try again in a minute.",
         )

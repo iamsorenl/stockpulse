@@ -14,6 +14,7 @@ import { RangeSelector } from './components/RangeSelector'
 import { PriceChart } from './components/PriceChart'
 import { TrendBadge } from './components/TrendBadge'
 import { SentimentPanel } from './components/SentimentPanel'
+import { TickerChat } from './components/TickerChat'
 import './App.css'
 
 const RANGE_LABELS: Record<PriceRange, string> = {
@@ -211,6 +212,8 @@ function App() {
             events={trendEvents}
           />
         )}
+
+        {ticker && <TickerChat key={ticker} ticker={ticker} />}
       </main>
       <footer className="site-footer">
         <p>

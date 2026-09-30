@@ -7,9 +7,12 @@ Mounted under the FastAPI app in main.py. All paths live beneath /api except
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
+from llm_kit import LlmError
 
-from . import config, ratelimit, sentiment, stocks, trends
+from . import chat, config, ratelimit, sentiment, stocks, trends
 from .models import (
+    ChatRequest,
     OnThisDayResponse,
     PricesResponse,
     SearchResponse,
@@ -111,3 +114,23 @@ def trend_events(
     Reads accumulated snapshots + prices — empty until enough history builds up.
     """
     return trends.get_trend_events(ticker, range)
+
+
+@router.post(
+    "/chat",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(ratelimit.enforce_sentiment)],
+)
+def chat_route(req: ChatRequest):
+    """Answer a question about `ticker` from StockPulse's data. Plain-text body.
+
+    One Groq call per request, counted against the shared daily cap. Rate limit
+    or cap hit -> 429; any other LLM failure -> 502; no Groq key -> 503.
+    """
+    if not config.GROQ_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Chat not configured. Set GROQ_API_KEY.")
+    try:
+        return chat.answer(req.ticker, [m.model_dump() for m in req.messages])
+    except LlmError as exc:
+        status = 429 if exc.kind == "rate-limit" else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc

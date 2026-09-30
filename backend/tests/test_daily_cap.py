@@ -1,6 +1,6 @@
 """Tests for the global daily Groq call cap (Render deploy hardening).
 
-No network -- `_groq_complete` must short-circuit to None once the cap is hit,
+No network -- `groq_chat` must short-circuit with a rate-limit LlmError once the cap is hit,
 without ever reaching urllib. Run from backend/:
     ./.venv/bin/python -m tests.test_daily_cap
 """
@@ -28,7 +28,7 @@ def _reset_cap(limit: int):
     original_limit = config.DAILY_LLM_CAP
     original_cap = S._groq_daily_cap
     config.DAILY_LLM_CAP = limit
-    S._groq_daily_cap = S._DailyCap()
+    S._groq_daily_cap = S.DailyCap(limit)
     return original_limit, original_cap
 
 
@@ -63,7 +63,7 @@ def test_cap_resets_on_a_new_day():
 
 
 @case
-def test_groq_complete_short_circuits_without_network_when_cap_hit():
+def test_groq_chat_short_circuits_without_network_when_cap_hit():
     original_limit, original_cap = _reset_cap(0)  # cap already exhausted
     original_key = config.GROQ_API_KEY
     original_configured = config.GROQ_CONFIGURED
@@ -77,12 +77,54 @@ def test_groq_complete_short_circuits_without_network_when_cap_hit():
     original_urlopen = urllib.request.urlopen
     urllib.request.urlopen = _boom
     try:
-        result = S._groq_complete("system", "user")
-        assert result is None, result
+        try:
+            S.groq_chat([{"role": "user", "content": "hi"}])
+            raise AssertionError("expected LlmError")
+        except S.LlmError as exc:
+            assert exc.kind == "rate-limit", exc.kind
+        # The sentiment path swallows it and returns None (Ollama not enabled).
+        original_ollama = config.OLLAMA_ENABLED
+        config.OLLAMA_ENABLED = False
+        try:
+            assert S._llm_json("system", "user") is None
+        finally:
+            config.OLLAMA_ENABLED = original_ollama
     finally:
         urllib.request.urlopen = original_urlopen
         config.GROQ_API_KEY = original_key
         config.GROQ_CONFIGURED = original_configured
+        _restore(original_limit, original_cap)
+
+
+@case
+def test_llm_json_falls_back_to_ollama_when_groq_fails():
+    from llm_kit import LlmError, Reply
+    original_limit, original_cap = _reset_cap(5)
+    saved = (S.compat_chat, S.ollama_chat, config.GROQ_CONFIGURED, config.GROQ_API_KEY,
+             config.OLLAMA_ENABLED)
+    seen = {}
+
+    def _groq_down(messages, **kw):
+        seen["groq"] = kw
+        raise LlmError("api", "groq 500", 500)
+
+    def _ollama(messages, model, **kw):
+        seen["ollama"] = (model, kw)
+        return Reply('```json\n{"results": []}\n```')
+
+    S.compat_chat, S.ollama_chat = _groq_down, _ollama
+    config.GROQ_CONFIGURED, config.GROQ_API_KEY, config.OLLAMA_ENABLED = True, "k", True
+    try:
+        assert S._llm_json("system", "user") == {"results": []}
+        assert seen["groq"]["json_mode"] is True and seen["groq"]["temperature"] == 0
+        model, kw = seen["ollama"]
+        assert model == config.OLLAMA_MODEL and kw["format"] == "json", kw
+        assert kw["url"] == config.OLLAMA_BASE_URL and kw["temperature"] == 0, kw
+        S.ollama_chat = lambda *a, **k: Reply("not json")
+        assert S._llm_json("system", "user") is None
+    finally:
+        (S.compat_chat, S.ollama_chat, config.GROQ_CONFIGURED, config.GROQ_API_KEY,
+         config.OLLAMA_ENABLED) = saved
         _restore(original_limit, original_cap)
 
 

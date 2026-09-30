@@ -76,7 +76,7 @@ RATE_LIMIT_SENTIMENT = int(os.environ.get("STOCKPULSE_RATE_LIMIT_SENTIMENT", "20
 RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("STOCKPULSE_RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 # Global daily ceiling on Groq calls (all clients combined), enforced in
-# sentiment._groq_complete -- the one chokepoint all Groq calls route through.
+# sentiment.groq_chat -- the one chokepoint all Groq calls route through.
 DAILY_LLM_CAP = int(os.environ.get("STOCKPULSE_DAILY_LLM_CAP", "300"))
 
 # --- M2 sentiment integrations -------------------------------------------------
