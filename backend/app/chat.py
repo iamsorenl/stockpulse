@@ -57,7 +57,7 @@ def _price_lines(ticker: str) -> list[str]:
 def _sentiment_lines(ticker: str) -> list[str]:
     cached = db.cache_get(sentiment._cache_key(ticker))
     try:
-        s: dict[str, Any] = json.loads(cached[0]) if cached else None
+        s: dict[str, Any] | None = json.loads(cached[0]) if cached else None
     except (json.JSONDecodeError, TypeError):
         s = None
     if not s:
