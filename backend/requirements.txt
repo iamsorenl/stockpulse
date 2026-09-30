@@ -7,3 +7,5 @@ yfinance==1.5.1
 # curl_cffi lets yfinance impersonate a browser; without it Yahoo's bot wall
 # returns non-JSON and every fetch fails with "Expecting value: line 1 column 1".
 curl_cffi==0.15.0
+# Shared LLM call helpers (Groq/Ollama clients, JSON parsing, daily cap), pinned to a commit.
+llm-kit @ git+https://github.com/iamsorenl/llm-kit@ae7f459db41d2e5a9b8fe549db35eb31867fcb91#subdirectory=py

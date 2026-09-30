@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import json
 import logging
-import urllib.error
-import urllib.request
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+from llm_kit import GROQ, DailyCap, LlmError, compat_chat, ollama_chat, parse_json_reply
 
 from . import config, db
 from .apewisdom import get_stats as get_mention_stats
@@ -29,9 +29,8 @@ from .reddit_ingest import Mention, fetch_mentions
 
 logger = logging.getLogger("stockpulse.sentiment")
 
-# Groq sits behind a WAF that 403s the default python-urllib User-Agent, so we
-# send an explicit one on every LLM request.
-_HTTP_UA = "StockPulse/0.1 (+https://github.com/iamsorenl/stockpulse)"
+# Groq sits behind a WAF that 403s the default "Python-urllib/x.y" User-Agent.
+# llm-kit sends its own "llm-kit" UA on every request, which avoids that block.
 
 _BATCH_SIZE = 8              # mentions per LLM call
 _MAX_MENTIONS = 64          # cap work per ticker (keeps latency + tokens bounded)
@@ -95,107 +94,51 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class _DailyCap:
-    """Global counter of Groq calls, resetting at UTC midnight.
+# Global counter of Groq calls, resetting at UTC midnight. Single-instance,
+# in-memory (matches the deploy target). Shared by sentiment scoring and the
+# ticker chat, so both draw from one daily budget.
+_groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
 
-    Single-instance, in-memory (matches the deploy target). When the cap is
-    hit, `_groq_complete` returns None like any other Groq failure, so callers
-    fall through to Ollama / the ApeWisdom volume fallback / a cached result.
+
+def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
+    """One Groq completion through the shared daily cap. Raises LlmError.
+
+    Hitting the cap raises LlmError("rate-limit") without touching the network.
     """
-
-    def __init__(self) -> None:
-        self._date = None
-        self._count = 0
-
-    def try_consume(self) -> bool:
-        today = datetime.now(timezone.utc).date()
-        if self._date != today:
-            self._date = today
-            self._count = 0
-        if self._count >= config.DAILY_LLM_CAP:
-            return False
-        self._count += 1
-        return True
-
-
-_groq_daily_cap = _DailyCap()
-
-
-def _groq_complete(system: str, user: str) -> Optional[str]:
     if not config.GROQ_CONFIGURED:
-        return None
+        raise LlmError("no-key", "GROQ_API_KEY is not set")
     if not _groq_daily_cap.try_consume():
-        logger.warning("groq daily cap (%d) reached; skipping call", config.DAILY_LLM_CAP)
-        return None
-    body = json.dumps(
-        {
-            "model": config.GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {config.GROQ_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": _HTTP_UA,
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8", "replace"))
-        return payload["choices"][0]["message"]["content"]
-    except (urllib.error.URLError, TimeoutError, OSError, KeyError, ValueError) as exc:
-        logger.warning("groq completion failed: %s", exc)
-        return None
-
-
-def _ollama_complete(system: str, user: str) -> Optional[str]:
-    if not config.OLLAMA_ENABLED:
-        return None
-    body = json.dumps(
-        {
-            "model": config.OLLAMA_MODEL,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0},
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        f"{config.OLLAMA_BASE_URL}/api/chat",
-        data=body,
-        headers={"Content-Type": "application/json", "User-Agent": _HTTP_UA},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8", "replace"))
-        return payload["message"]["content"]
-    except (urllib.error.URLError, TimeoutError, OSError, KeyError, ValueError) as exc:
-        logger.warning("ollama completion failed: %s", exc)
-        return None
+        raise LlmError("rate-limit", f"groq daily cap ({config.DAILY_LLM_CAP}) reached", 429)
+    return compat_chat(
+        messages, base_url=GROQ, model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY,
+        json_mode=json_mode, temperature=0, timeout=_HTTP_TIMEOUT,
+    ).content
 
 
 def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
     """Complete via Groq (then Ollama) and parse the JSON object, or None."""
-    raw = _groq_complete(system, user) or _ollama_complete(system, user)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    raw = None
+    if config.GROQ_CONFIGURED:
+        try:
+            raw = groq_chat(messages, json_mode=True)
+        except LlmError as exc:
+            logger.warning("groq completion failed: %s", exc)
+    if not raw and config.OLLAMA_ENABLED:
+        try:
+            raw = ollama_chat(
+                messages, config.OLLAMA_MODEL, url=config.OLLAMA_BASE_URL,
+                format="json", temperature=0, timeout=_HTTP_TIMEOUT,
+            ).content
+        except LlmError as exc:
+            logger.warning("ollama completion failed: %s", exc)
     if raw is None:
         return None
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else None
-    except (json.JSONDecodeError, TypeError):
+    parsed, _err = parse_json_reply(raw)
+    if not isinstance(parsed, dict):
         logger.warning("LLM returned non-JSON content")
         return None
+    return parsed
 
 
 def _classify_batch(ticker: str, texts: list[str]) -> dict[int, str]:
