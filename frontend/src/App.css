@@ -977,3 +977,28 @@
   font-size: 12px;
   color: var(--text);
 }
+
+/* ---------- Ticker chat (chat-ui themed with the app tokens) ---------- */
+.ticker-chat {
+  text-align: left;
+}
+.ticker-chat .chatui {
+  --chatui-bg: var(--bg);
+  --chatui-fg: var(--text-h);
+  --chatui-border: var(--border);
+  --chatui-user-bg: var(--accent-bg);
+  --chatui-user-fg: var(--text-h);
+  --chatui-assistant-bg: var(--code-bg);
+  --chatui-assistant-fg: var(--text-h);
+  --chatui-accent: var(--accent);
+  --chatui-error: #d23b3f;
+  --chatui-radius: 10px;
+  height: 360px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 15px;
+}
+.ticker-chat .chatui-user {
+  border: 1px solid var(--accent-border);
+}

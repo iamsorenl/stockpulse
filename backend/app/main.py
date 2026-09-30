@@ -10,6 +10,7 @@ Endpoints:
   GET /health                              liveness probe
   GET /api/search?q=                       symbol/name suggestions (SOR-152)
   GET /api/stocks/{ticker}/prices?range=   OHLCV + trend indicators (SOR-151/154)
+  POST /api/chat                           ticker Q&A over cached data (plain text)
 
 The search and price routes live in app/api.py and are mounted below.
 """

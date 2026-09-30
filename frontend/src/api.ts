@@ -8,7 +8,7 @@
 //     directly to that origin, bypassing the proxy. Useful for deployed builds.
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? ''
 
-function apiUrl(path: string): string {
+export function apiUrl(path: string): string {
   // path should start with "/". When API_BASE_URL is empty this yields a
   // relative URL handled by the Vite proxy.
   return `${API_BASE_URL}${path}`
