@@ -7,10 +7,8 @@ from backend/:
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,14 +48,17 @@ _SENTIMENT = {
 class _Patched:
     """Swap Groq/prices/cache/config for the duration of a test, then restore."""
 
-    def __init__(self, reply=None, error=None, cap=5, prices=_PRICES, sent=_SENTIMENT):
+    def __init__(self, reply=None, error=None, cap=5, prices=_PRICES, sent=_SENTIMENT,
+                 errors_first=0):
         self.calls: list = []
+        self.sleeps: list = []
         self.reply, self.error, self.cap = reply, error, cap
         self.prices, self.sent = prices, sent
+        self.errors_first = errors_first  # raise self.error only on the first N calls
 
     def _compat(self, messages, **kw):
         self.calls.append((messages, kw))
-        if self.error:
+        if self.error and (not self.errors_first or len(self.calls) <= self.errors_first):
             raise self.error
         return Reply(self.reply)
 
@@ -66,24 +67,25 @@ class _Patched:
             raise chat.stocks.UnknownTickerError("nope")
         return self.prices
 
-    def _cache_get(self, key):
+    def _get_sentiment(self, ticker):
         if self.sent is None:
-            return None
-        return json.dumps(self.sent), datetime.now(timezone.utc)
+            raise RuntimeError("sentiment sources down")
+        return self.sent
 
     def __enter__(self):
         self._saved = (S.compat_chat, S._groq_daily_cap, config.GROQ_CONFIGURED,
-                       config.GROQ_API_KEY, chat.stocks.get_prices, chat.db.cache_get)
+                       config.GROQ_API_KEY, chat.stocks.get_prices, S.get_sentiment, S.time.sleep)
         S.compat_chat = self._compat
         S._groq_daily_cap = DailyCap(self.cap)
         config.GROQ_CONFIGURED, config.GROQ_API_KEY = True, "fake-key"
         chat.stocks.get_prices = self._get_prices
-        chat.db.cache_get = self._cache_get
+        S.get_sentiment = self._get_sentiment
+        S.time.sleep = self.sleeps.append
         return self
 
     def __exit__(self, *exc):
         (S.compat_chat, S._groq_daily_cap, config.GROQ_CONFIGURED,
-         config.GROQ_API_KEY, chat.stocks.get_prices, chat.db.cache_get) = self._saved
+         config.GROQ_API_KEY, chat.stocks.get_prices, S.get_sentiment, S.time.sleep) = self._saved
 
 
 def _req(n=1, ticker="aapl", content="How is it doing?"):
@@ -130,7 +132,7 @@ def test_missing_data_is_stated_not_invented():
         api.chat_route(_req())
         system = p.calls[0][0][0]["content"]
         assert "Prices: unavailable." in system, system
-        assert "Sentiment: not computed yet" in system, system
+        assert "Sentiment: unavailable right now." in system, system
 
 
 @case
@@ -149,11 +151,26 @@ def test_chat_shares_the_sentiment_daily_cap():
 
 @case
 def test_groq_rate_limit_maps_to_429_and_other_errors_to_502():
-    with _Patched(error=LlmError("rate-limit", "slow down", 429)):
+    with _Patched(error=LlmError("rate-limit", "slow down", 429)) as p:
         assert _status(lambda: api.chat_route(_req())) == 429
+        assert len(p.calls) == len(chat.RETRY_DELAYS) + 1 and p.sleeps == list(chat.RETRY_DELAYS)
     for kind in ("api", "timeout", "unreachable", "auth", "bad-response"):
         with _Patched(error=LlmError(kind, "boom")):
             assert _status(lambda: api.chat_route(_req())) == 502, kind
+
+
+@case
+def test_groq_429_is_retried_then_answers_charging_cap_once():
+    with _Patched(reply="ok", error=LlmError("rate-limit", "slow down", 429), errors_first=2, cap=1) as p:
+        assert api.chat_route(_req()) == "ok"
+        assert len(p.calls) == 3 and p.sleeps == list(chat.RETRY_DELAYS[:2]), (p.calls, p.sleeps)
+
+
+@case
+def test_other_groq_errors_are_not_retried():
+    with _Patched(error=LlmError("api", "boom")) as p:
+        assert _status(lambda: api.chat_route(_req())) == 502
+        assert len(p.calls) == 1 and p.sleeps == []
 
 
 @case

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -100,19 +101,30 @@ def _now_iso() -> str:
 _groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
 
 
-def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
+def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False,
+              retry_delays: tuple[float, ...] = ()) -> str:
     """One Groq completion through the shared daily cap. Raises LlmError.
 
     Hitting the cap raises LlmError("rate-limit") without touching the network.
+    retry_delays: seconds to wait before each retry when Groq itself answers 429
+    (its per-minute limit). The daily cap is charged once per call, not per retry.
     """
     if not config.GROQ_CONFIGURED:
         raise LlmError("no-key", "GROQ_API_KEY is not set")
     if not _groq_daily_cap.try_consume():
         raise LlmError("rate-limit", f"groq daily cap ({config.DAILY_LLM_CAP}) reached", 429)
-    return compat_chat(
-        messages, base_url=GROQ, model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY,
-        json_mode=json_mode, temperature=0, timeout=_HTTP_TIMEOUT,
-    ).content
+    for delay in (*retry_delays, None):
+        try:
+            return compat_chat(
+                messages, base_url=GROQ, model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY,
+                json_mode=json_mode, temperature=0, timeout=_HTTP_TIMEOUT,
+            ).content
+        except LlmError as exc:
+            if exc.kind != "rate-limit" or delay is None:
+                raise
+            logger.info("groq 429, retrying in %ss", delay)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
