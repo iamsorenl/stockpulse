@@ -16,9 +16,6 @@ logger = logging.getLogger("stockpulse.chat")
 
 MAX_TURNS = 10  # most recent messages sent to the model
 MAX_CHARS = 2000  # per-message clip before it reaches the model
-# Waits before retrying a Groq 429. A cold-ticker sentiment compute right before
-# the answer often uses up Groq's per-minute budget; it resets within a minute.
-RETRY_DELAYS = (5, 10, 20)
 
 _SYSTEM = """You are StockPulse's assistant for the stock ticker {ticker}.
 Answer using ONLY the data below plus general financial knowledge.
@@ -105,4 +102,4 @@ def answer(ticker: str, messages: list[dict[str, str]]) -> str:
         if m["content"].strip()
     ]
     convo = [{"role": "system", "content": build_system_prompt(t)}] + recent
-    return sentiment.groq_chat(convo, retry_delays=RETRY_DELAYS)
+    return sentiment.groq_chat(convo, retry_delays=sentiment.GROQ_RETRY_DELAYS)

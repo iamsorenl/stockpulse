@@ -153,7 +153,7 @@ def test_chat_shares_the_sentiment_daily_cap():
 def test_groq_rate_limit_maps_to_429_and_other_errors_to_502():
     with _Patched(error=LlmError("rate-limit", "slow down", 429)) as p:
         assert _status(lambda: api.chat_route(_req())) == 429
-        assert len(p.calls) == len(chat.RETRY_DELAYS) + 1 and p.sleeps == list(chat.RETRY_DELAYS)
+        assert len(p.calls) == len(S.GROQ_RETRY_DELAYS) + 1 and p.sleeps == list(S.GROQ_RETRY_DELAYS)
     for kind in ("api", "timeout", "unreachable", "auth", "bad-response"):
         with _Patched(error=LlmError(kind, "boom")):
             assert _status(lambda: api.chat_route(_req())) == 502, kind
@@ -163,7 +163,7 @@ def test_groq_rate_limit_maps_to_429_and_other_errors_to_502():
 def test_groq_429_is_retried_then_answers_charging_cap_once():
     with _Patched(reply="ok", error=LlmError("rate-limit", "slow down", 429), errors_first=2, cap=1) as p:
         assert api.chat_route(_req()) == "ok"
-        assert len(p.calls) == 3 and p.sleeps == list(chat.RETRY_DELAYS[:2]), (p.calls, p.sleeps)
+        assert len(p.calls) == 3 and p.sleeps == list(S.GROQ_RETRY_DELAYS[:2]), (p.calls, p.sleeps)
 
 
 @case
@@ -171,6 +171,42 @@ def test_other_groq_errors_are_not_retried():
     with _Patched(error=LlmError("api", "boom")) as p:
         assert _status(lambda: api.chat_route(_req())) == 502
         assert len(p.calls) == 1 and p.sleeps == []
+
+
+@case
+def test_scoring_batch_retries_groq_429_instead_of_dropping():
+    with _Patched(reply='{"results": []}', error=LlmError("rate-limit", "slow", 429), errors_first=1) as p:
+        assert S._llm_json("sys", "user") == {"results": []}
+        assert len(p.calls) == 2 and p.sleeps == [S.GROQ_RETRY_DELAYS[0]]
+
+
+@case
+def test_concurrent_sentiment_calls_share_one_compute():
+    import threading
+    import time
+    state = {"running": 0, "peak": 0, "computes": 0, "cache": None}
+
+    def fake(ticker):
+        if state["cache"]:
+            return state["cache"]
+        state["running"] += 1
+        state["peak"] = max(state["peak"], state["running"])
+        time.sleep(0.05)
+        state["computes"] += 1
+        state["cache"] = {"ticker": ticker}
+        state["running"] -= 1
+        return state["cache"]
+
+    saved, S._get_sentiment = S._get_sentiment, fake
+    try:
+        threads = [threading.Thread(target=S.get_sentiment, args=("aapl",)) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        S._get_sentiment = saved
+    assert state["peak"] == 1 and state["computes"] == 1, state
 
 
 @case

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -100,6 +101,10 @@ def _now_iso() -> str:
 # ticker chat, so both draw from one daily budget.
 _groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
 
+# Waits before retrying a Groq 429 (its per-minute limit, which resets within a
+# minute). Without retries a busy compute silently drops whole scoring batches.
+GROQ_RETRY_DELAYS = (5, 10, 20)
+
 
 def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False,
               retry_delays: tuple[float, ...] = ()) -> str:
@@ -133,7 +138,7 @@ def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
     raw = None
     if config.GROQ_CONFIGURED:
         try:
-            raw = groq_chat(messages, json_mode=True)
+            raw = groq_chat(messages, json_mode=True, retry_delays=GROQ_RETRY_DELAYS)
         except LlmError as exc:
             logger.warning("groq completion failed: %s", exc)
     if not raw and config.OLLAMA_ENABLED:
@@ -279,7 +284,19 @@ def _cache_key(ticker: str) -> str:
     return f"sentiment:{ticker}"
 
 
+# One lock per ticker, so a page prefetch and a chat message arriving together
+# share one compute instead of each spending Groq calls on the same ticker.
+_compute_locks: dict[str, threading.Lock] = {}
+
+
 def get_sentiment(ticker: str) -> dict[str, Any]:
+    """Cache-first sentiment for `ticker`; concurrent callers share one compute."""
+    normalized = (ticker or "").strip().upper()
+    with _compute_locks.setdefault(normalized, threading.Lock()):
+        return _get_sentiment(normalized)
+
+
+def _get_sentiment(ticker: str) -> dict[str, Any]:
     """Return the sentiment dict for `ticker`, cache-first.
 
     Serves a fresh cached result (within `_CACHE_TTL_SECONDS`) when available;
