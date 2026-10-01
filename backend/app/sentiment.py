@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -99,20 +101,35 @@ def _now_iso() -> str:
 # ticker chat, so both draw from one daily budget.
 _groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
 
+# Waits before retrying a Groq 429 (its per-minute limit, which resets within a
+# minute). Without retries a busy compute silently drops whole scoring batches.
+GROQ_RETRY_DELAYS = (5, 10, 20)
 
-def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
+
+def groq_chat(messages: list[dict[str, str]], *, json_mode: bool = False,
+              retry_delays: tuple[float, ...] = ()) -> str:
     """One Groq completion through the shared daily cap. Raises LlmError.
 
     Hitting the cap raises LlmError("rate-limit") without touching the network.
+    retry_delays: seconds to wait before each retry when Groq itself answers 429
+    (its per-minute limit). The daily cap is charged once per call, not per retry.
     """
     if not config.GROQ_CONFIGURED:
         raise LlmError("no-key", "GROQ_API_KEY is not set")
     if not _groq_daily_cap.try_consume():
         raise LlmError("rate-limit", f"groq daily cap ({config.DAILY_LLM_CAP}) reached", 429)
-    return compat_chat(
-        messages, base_url=GROQ, model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY,
-        json_mode=json_mode, temperature=0, timeout=_HTTP_TIMEOUT,
-    ).content
+    for delay in (*retry_delays, None):
+        try:
+            return compat_chat(
+                messages, base_url=GROQ, model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY,
+                json_mode=json_mode, temperature=0, timeout=_HTTP_TIMEOUT,
+            ).content
+        except LlmError as exc:
+            if exc.kind != "rate-limit" or delay is None:
+                raise
+            logger.info("groq 429, retrying in %ss", delay)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
@@ -121,7 +138,7 @@ def _llm_json(system: str, user: str) -> Optional[dict[str, Any]]:
     raw = None
     if config.GROQ_CONFIGURED:
         try:
-            raw = groq_chat(messages, json_mode=True)
+            raw = groq_chat(messages, json_mode=True, retry_delays=GROQ_RETRY_DELAYS)
         except LlmError as exc:
             logger.warning("groq completion failed: %s", exc)
     if not raw and config.OLLAMA_ENABLED:
@@ -267,7 +284,19 @@ def _cache_key(ticker: str) -> str:
     return f"sentiment:{ticker}"
 
 
+# One lock per ticker, so a page prefetch and a chat message arriving together
+# share one compute instead of each spending Groq calls on the same ticker.
+_compute_locks: dict[str, threading.Lock] = {}
+
+
 def get_sentiment(ticker: str) -> dict[str, Any]:
+    """Cache-first sentiment for `ticker`; concurrent callers share one compute."""
+    normalized = (ticker or "").strip().upper()
+    with _compute_locks.setdefault(normalized, threading.Lock()):
+        return _get_sentiment(normalized)
+
+
+def _get_sentiment(ticker: str) -> dict[str, Any]:
     """Return the sentiment dict for `ticker`, cache-first.
 
     Serves a fresh cached result (within `_CACHE_TTL_SECONDS`) when available;

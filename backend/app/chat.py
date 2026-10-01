@@ -1,17 +1,16 @@
 """Ticker chat: answer questions about one ticker from the data StockPulse has.
 
-Reads only what's already computed: the cached 6mo prices payload (fetched on a
-cache miss, same as the chart) and the cached sentiment result. It never
-triggers a sentiment compute, so a chat message costs exactly one Groq call.
+Reads the cached 6mo prices payload and the sentiment result, fetching either on
+a cache miss (same as the chart and the sentiment endpoint). A warm cache means
+one Groq call per message; a cold ticker also pays for one sentiment compute.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from . import db, sentiment, stocks
+from . import sentiment, stocks
 
 logger = logging.getLogger("stockpulse.chat")
 
@@ -55,13 +54,13 @@ def _price_lines(ticker: str) -> list[str]:
 
 
 def _sentiment_lines(ticker: str) -> list[str]:
-    cached = db.cache_get(sentiment._cache_key(ticker))
     try:
-        s: dict[str, Any] | None = json.loads(cached[0]) if cached else None
-    except (json.JSONDecodeError, TypeError):
+        s: dict[str, Any] | None = sentiment.get_sentiment(ticker)
+    except Exception:  # noqa: BLE001 - chat still answers from prices
+        logger.exception("sentiment compute failed for %s", ticker)
         s = None
     if not s:
-        return ["Sentiment: not computed yet for this ticker."]
+        return ["Sentiment: unavailable right now."]
     lines = [f"Sentiment computed at {s.get('computed_at')} (source: {s.get('source')})."]
     if s.get("source") == "reddit":
         lines.append(
@@ -103,4 +102,4 @@ def answer(ticker: str, messages: list[dict[str, str]]) -> str:
         if m["content"].strip()
     ]
     convo = [{"role": "system", "content": build_system_prompt(t)}] + recent
-    return sentiment.groq_chat(convo)
+    return sentiment.groq_chat(convo, retry_delays=sentiment.GROQ_RETRY_DELAYS)
