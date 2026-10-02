@@ -67,11 +67,17 @@ class _SPAStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope):
         try:
-            return await super().get_response(path, scope)
+            resp = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code == 404 and not path.startswith("api/"):
-                return await super().get_response("index.html", scope)
-            raise
+                resp = await super().get_response("index.html", scope)
+            else:
+                raise
+        # Hashed assets/ files are safe to cache; the HTML shell must revalidate
+        # or browsers keep running the previous deploy's JS for hours.
+        if not path.startswith("assets/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
 
 
 # Single-service deploy: FastAPI also serves the built frontend at "/", so one
