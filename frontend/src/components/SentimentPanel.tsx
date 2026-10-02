@@ -175,7 +175,7 @@ export function SentimentPanel({
       {date ? (
         <OnThisDayView load={onLoad} date={date} />
       ) : (
-        <LiveView load={load} events={events} />
+        <LiveView ticker={ticker} load={load} events={events} />
       )}
     </section>
   )
@@ -210,16 +210,51 @@ function SignalsNote({ events }: { events?: TrendEvent[] }) {
 
 // ---- Live view (current sentiment) ----
 
-function LiveView({ load, events }: { load: Load; events?: TrendEvent[] }) {
+// A cold ticker means fetching Reddit and scoring posts with the LLM, which can
+// take a minute or two. A bare spinner that long reads as "stuck", so show a
+// bar that eases toward full (never reaching it) and a ticking clock instead.
+const EXPECTED_SECONDS = 60
+
+function ScoringProgress({ ticker }: { ticker: string }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const pct = 95 * (1 - Math.exp(-elapsed / (EXPECTED_SECONDS / 2)))
+  const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+  return (
+    <div className="sentiment-status" role="status">
+      <div className="sentiment-progress" aria-hidden="true">
+        <div className="sentiment-progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <span>
+        Reading Reddit and scoring posts about {ticker}… {clock}
+      </span>
+      <span className="sentiment-progress-hint">
+        {elapsed < EXPECTED_SECONDS
+          ? 'First look at a ticker can take a minute or two, then it’s cached for an hour.'
+          : 'Still working. Reddit’s archive is slow right now, hang tight.'}
+      </span>
+    </div>
+  )
+}
+
+function LiveView({
+  ticker,
+  load,
+  events,
+}: {
+  ticker: string
+  load: Load
+  events?: TrendEvent[]
+}) {
   return (
     <>
       <SignalsNote events={events} />
 
       {load.state === 'loading' && (
-        <div className="sentiment-status">
-          <span className="spinner" aria-hidden="true" />
-          <span>Gauging the crowd on r/… this can take a few seconds.</span>
-        </div>
+        <ScoringProgress ticker={ticker} />
       )}
 
       {load.state === 'not-configured' && (

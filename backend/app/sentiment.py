@@ -35,7 +35,7 @@ logger = logging.getLogger("stockpulse.sentiment")
 # llm-kit sends its own "llm-kit" UA on every request, which avoids that block.
 
 _BATCH_SIZE = 8              # mentions per LLM call
-_MAX_MENTIONS = 64          # cap work per ticker (keeps latency + tokens bounded)
+_MAX_MENTIONS = 24          # cap work per ticker: 3 Groq calls, fewer 429s and a smaller hit on the daily cap
 _TEXT_CLIP = 400            # chars of each mention shown to the model
 _TOP_N = 5                  # representative posts surfaced to the UI
 _HTTP_TIMEOUT = 30

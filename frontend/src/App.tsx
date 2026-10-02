@@ -205,7 +205,7 @@ function App() {
 
         {ticker && (
           <SentimentPanel
-            key={ticker}
+            key={`sentiment-${ticker}`}
             ticker={ticker}
             date={selectedDate}
             onDateChange={setSelectedDate}
@@ -213,7 +213,7 @@ function App() {
           />
         )}
 
-        {ticker && <TickerChat key={ticker} ticker={ticker} />}
+        {ticker && <TickerChat key={`chat-${ticker}`} ticker={ticker} />}
       </main>
       <footer className="site-footer">
         <p>
