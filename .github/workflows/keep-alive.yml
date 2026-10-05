@@ -1,5 +1,6 @@
 # Render's free tier sleeps after 15 idle minutes; a ping every 10 keeps it warm.
 # Free: public repo, so Actions minutes cost nothing.
+# Retries cover ~3 minutes: Render sometimes 502s for a minute or so with no deploy.
 name: keep-alive
 on:
   schedule:
@@ -8,6 +9,6 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://stockpulse-6q41.onrender.com/health
+      - run: curl -fsS --retry 8 --retry-delay 20 --max-time 90 https://stockpulse-6q41.onrender.com/health
