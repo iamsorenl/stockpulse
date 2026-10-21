@@ -32,6 +32,8 @@ def case(fn):
 
 def _with_temp_db(fn):
     orig = db.DB_PATH
+    # Cases assign these directly; restore so they don't leak into other test files.
+    saved = (backfill.fetch_day_mentions, sentiment.score_mentions, backfill.time.sleep)
     tmpdir = tempfile.mkdtemp()
     db.DB_PATH = Path(tmpdir) / "bf_test.db"
     try:
@@ -39,6 +41,7 @@ def _with_temp_db(fn):
         fn()
     finally:
         db.DB_PATH = orig
+        backfill.fetch_day_mentions, sentiment.score_mentions, backfill.time.sleep = saved
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
