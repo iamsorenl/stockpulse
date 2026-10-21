@@ -1,9 +1,18 @@
 # StockPulse
 
-A stock charting web app: search tickers, view candlestick price history with
-SMA overlays and a simple trend read. This repository is the **Stage 0 scaffold**
-— wiring, conventions, and the API contract are in place; search, price, and
-chart features are built by later stages against the contract below.
+A live stock app that puts price trends and crowd sentiment on the same chart.
+
+**Live:** https://stockpulse-6q41.onrender.com (free Render instance, so the
+first load after idle can take up to a minute)
+
+- Search by symbol or company name, then view candlesticks with 20 and 50 day
+  moving averages and an up / down / sideways trend read
+- Sentiment scored by gpt-oss 20B on Groq from Reddit, ApeWisdom and news
+  feeds, snapshotted daily so a timeline builds up per ticker
+- Chart markers on the days where sentiment and price agree or split
+- A per-ticker chat that answers from the loaded price and sentiment data
+- Per-IP rate limits and a global daily cap on model calls, since anyone can
+  use it
 
 ## Layout
 
@@ -11,16 +20,22 @@ chart features are built by later stages against the contract below.
 stockpulse/
 ├── backend/            FastAPI app (Python)
 │   ├── app/
-│   │   ├── main.py     FastAPI entrypoint, /health, CORS, startup DB init
+│   │   ├── main.py     FastAPI entrypoint, /health, CORS, serves the built frontend
+│   │   ├── api.py      /api routes: search, prices, sentiment, trend events, chat
 │   │   ├── config.py   Env-configurable settings (single source of truth)
-│   │   └── db.py       SQLite cache helper (stdlib sqlite3) + `cache` table
+│   │   ├── db.py       SQLite cache + sentiment snapshot tables
+│   │   ├── providers.py  yfinance prices with a Stooq fallback
+│   │   ├── sentiment.py  Groq scoring over Reddit, ApeWisdom and news
+│   │   └── ratelimit.py  per-IP limits and the daily model-call cap
+│   ├── scripts/        snapshot_tickers.py for scheduled sentiment capture
+│   ├── tests/          pytest suite (offline)
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/           Vite + React + TypeScript app
 │   ├── src/
 │   │   ├── api.ts      API client + shared contract types + base-URL resolution
-│   │   ├── App.tsx     Home page; calls GET /health to prove wiring/CORS
-│   │   └── vite-env.d.ts
+│   │   ├── App.tsx     Search, chart, sentiment panel and chat
+│   │   └── components/ PriceChart (lightweight-charts), SentimentPanel, TickerChat, ...
 │   ├── vite.config.ts  Dev server (:5173) + proxy for /api and /health
 │   └── .env.example
 └── README.md
@@ -53,8 +68,8 @@ cd backend && ./.venv/bin/uvicorn app.main:app --reload
 ```
 
 Serves on http://localhost:8000. `GET /health` → `{"status":"ok"}`.
-On startup the app creates `backend/stockpulse.db` (gitignored) with a `cache`
-table that later stages use to memoize price responses.
+On startup the app creates `backend/stockpulse.db` (gitignored), which caches
+price and sentiment responses and holds the daily sentiment snapshots.
 
 > If you prefer to activate the venv first (`source backend/.venv/bin/activate`),
 > the equivalent command is `uvicorn app.main:app --reload` from `backend/`.
@@ -73,8 +88,14 @@ Then, to start it (the one command):
 cd frontend && npm run dev
 ```
 
-Open http://localhost:5173. The home page calls the backend `GET /health` and
-shows the result, proving the frontend ↔ backend wiring works.
+Open http://localhost:5173. Sentiment and chat need `GROQ_API_KEY` in
+`backend/.env`; prices and charts work without it.
+
+## Tests
+
+```bash
+cd backend && ./.venv/bin/pip install pytest && ./.venv/bin/pytest
+```
 
 ## Sentiment snapshots (daily timeline)
 
@@ -114,7 +135,7 @@ Two supported approaches; **the default is the Vite dev proxy**:
 
 - **Backend**: all settings live in `backend/app/config.py` and are read from
   environment variables (see `backend/.env.example`). Read config from there,
-  never `os.environ` directly, in later stages.
+  never `os.environ` directly.
   - `STOCKPULSE_DB_PATH` — SQLite cache file (default `backend/stockpulse.db`)
   - `STOCKPULSE_CORS_ORIGINS` — comma-separated allowed origins (default the Vite dev server)
 - **Frontend**: only `VITE_`-prefixed vars reach the browser (see
@@ -122,9 +143,8 @@ Two supported approaches; **the default is the Vite dev proxy**:
 
 ## API contract
 
-Both backend and frontend agree on this. Later stages implement the search and
-price endpoints against it; the TypeScript types already live in
-`frontend/src/api.ts`.
+The core endpoints. The TypeScript types live in `frontend/src/api.ts`; the
+sentiment, trend-event and chat routes are in `backend/app/api.py`.
 
 ### `GET /health`
 ```json
@@ -189,8 +209,3 @@ Notes:
   protect the shared free-tier Groq key from one client burning the quota;
   they're in-memory and single-instance, matching the free plan's one
   instance.
-
-## Charting
-
-`lightweight-charts` is installed as a frontend dependency for later stages
-(candlesticks + line overlays for the SMAs). No charts are built yet.
