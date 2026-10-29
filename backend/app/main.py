@@ -62,13 +62,14 @@ if config.STORE == "dynamodb":
         Only requests that came through Lambda carry x-amzn-request-context;
         the adapter's own local /health readiness checks don't, and aren't billed."""
         start = time.monotonic()
-        response = await call_next(request)
-        if "x-amzn-request-context" in request.headers:
-            try:
-                meter_request(time.monotonic() - start)
-            except Exception:  # noqa: BLE001 - a meter failure must not break the request
-                logger.exception("free-tier meter update failed")
-        return response
+        try:
+            return await call_next(request)
+        finally:  # count failed requests too; Lambda bills them the same
+            if "x-amzn-request-context" in request.headers:
+                try:
+                    meter_request(time.monotonic() - start)
+                except Exception:  # noqa: BLE001 - usage is kept and retried on the next request
+                    logger.exception("free-tier meter update failed")
 
 
 @app.get("/health")

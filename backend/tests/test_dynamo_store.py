@@ -111,6 +111,27 @@ def test_meter_switches_function_off_at_limit():
         config.METER_LIMIT_REQUESTS, config.METER_LIMIT_GB_SECONDS = saved
 
 
+@case
+@mock_aws
+def test_meter_carries_usage_from_a_failed_write():
+    _fresh_table()
+    D._init_pending = False
+    real_table = D.table
+    D.table = lambda: (_ for _ in ()).throw(RuntimeError("throttled"))
+    try:
+        D.meter_request(1.0)  # write fails; usage must not be lost
+        raise AssertionError("expected the failed write to raise")
+    except RuntimeError:
+        pass
+    finally:
+        D.table = real_table
+    D.meter_request(1.0)
+    item = D.table().get_item(Key={"pk": "meter#lambda",
+                                   "sk": D.datetime.now(D.timezone.utc).strftime("%Y-%m")})["Item"]
+    assert int(item["requests"]) == 2, item
+    assert float(item["gb_seconds"]) == 2.02, item
+
+
 def main() -> int:
     failures = 0
     for fn in _CASES:

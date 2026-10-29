@@ -141,6 +141,10 @@ class SharedDailyCap:
 # show 3-10 s).
 _init_pending = True
 
+# Usage not yet written because the last write failed (e.g. DynamoDB throttled
+# under a burst). Carried into the next write so a flood can't go uncounted.
+_unrecorded = {"requests": 0, "gb_seconds": 0.0}
+
 
 def meter_request(seconds: float) -> None:
     """Record one invocation of `seconds`; switch the function off at the limit."""
@@ -149,18 +153,21 @@ def meter_request(seconds: float) -> None:
         seconds += config.METER_INIT_SECONDS
         _init_pending = False
     memory_gb = int(os.environ.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "1024")) / 1024
+    # +10 ms per call covers the adapter's own time.
+    _unrecorded["requests"] += 1
+    _unrecorded["gb_seconds"] += (seconds + 0.01) * memory_gb
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     totals = table().update_item(
         Key={"pk": "meter#lambda", "sk": month},
-        UpdateExpression="ADD requests :one, gb_seconds :gbs",
+        UpdateExpression="ADD requests :n, gb_seconds :gbs",
         ExpressionAttributeValues={
-            ":one": 1,
-            # +10 ms per call covers the adapter's own time; Decimal because
-            # DynamoDB numbers can't be floats.
-            ":gbs": Decimal(str(round((seconds + 0.01) * memory_gb, 3))),
+            ":n": _unrecorded["requests"],
+            # Decimal because DynamoDB numbers can't be floats.
+            ":gbs": Decimal(str(round(_unrecorded["gb_seconds"], 3))),
         },
         ReturnValues="UPDATED_NEW",
     )["Attributes"]
+    _unrecorded["requests"], _unrecorded["gb_seconds"] = 0, 0.0
     if (totals["requests"] >= config.METER_LIMIT_REQUESTS
             or totals["gb_seconds"] >= config.METER_LIMIT_GB_SECONDS):
         logger.error("free-tier meter limit reached (%s); switching function off", totals)
