@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
+from . import config
 from .config import DB_PATH
 
 _SCHEMA = """
@@ -180,3 +181,12 @@ def snapshot_get_one(ticker: str, date: str) -> Optional[dict]:
             (ticker, date),
         ).fetchone()
     return dict(row) if row is not None else None
+
+
+# ----- AWS deploy: swap in DynamoDB --------------------------------------------
+# Same function names and return shapes, so callers never know which store runs.
+
+if config.STORE == "dynamodb":
+    from .dynamo_store import (  # noqa: F811
+        cache_get, cache_set, init_db, snapshot_get_one, snapshot_upsert, snapshots_get,
+    )

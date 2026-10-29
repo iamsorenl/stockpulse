@@ -96,10 +96,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Global counter of Groq calls, resetting at UTC midnight. Single-instance,
-# in-memory (matches the deploy target). Shared by sentiment scoring and the
-# ticker chat, so both draw from one daily budget.
-_groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
+# Global counter of Groq calls, resetting at UTC midnight. Shared by sentiment
+# scoring and the ticker chat, so both draw from one daily budget. In memory
+# for a single process (local/Render); in DynamoDB on Lambda, where each
+# instance would otherwise get its own full budget.
+if config.STORE == "dynamodb":
+    from .dynamo_store import SharedDailyCap
+
+    _groq_daily_cap = SharedDailyCap(config.DAILY_LLM_CAP)
+else:
+    _groq_daily_cap = DailyCap(config.DAILY_LLM_CAP)
 
 # Waits before retrying a Groq 429 (its per-minute limit, which resets within a
 # minute). Without retries a busy compute silently drops whole scoring batches.

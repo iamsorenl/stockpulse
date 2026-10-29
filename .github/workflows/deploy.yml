@@ -1,0 +1,68 @@
+# Push to main: run the backend tests, then build the image and deploy it to
+# AWS Lambda. Logs in with GitHub OIDC (infra/github.tf), so no AWS keys are
+# stored in GitHub. Infrastructure changes still go through `terraform apply`.
+# Actions are pinned to commit SHAs: this job holds AWS credentials, and a
+# moved tag on a compromised action could otherwise steal them.
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+  AWS_ROLE_ARN: arn:aws:iam::028011396067:role/stockpulse-github-deploy
+  FUNCTION: stockpulse
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt pytest "moto[dynamodb]"
+      - run: cd backend && pytest -q
+
+  deploy:
+    needs: test
+    # Native ARM runner (free for public repos), matching the arm64 Lambda.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    permissions:
+      id-token: write # lets the job request the OIDC token
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # Tag each image with its commit so every deploy can be traced back.
+      # --provenance=false: Lambda rejects images carrying build attestations.
+      - name: Build and push image
+        run: |
+          IMAGE=${{ steps.ecr.outputs.registry }}/stockpulse:${{ github.sha }}
+          docker build --provenance=false -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Point the function at the new image
+        run: |
+          aws lambda update-function-code --function-name "$FUNCTION" --image-uri "$IMAGE" > /dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION"
+
+      - name: Smoke test
+        run: |
+          URL=$(aws lambda get-function-url-config --function-name "$FUNCTION" --query FunctionUrl --output text)
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors --max-time 30 "${URL}health"

@@ -7,6 +7,7 @@ X-Forwarded-For parsing directly. Run from backend/:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -23,10 +24,26 @@ def case(fn):
     return fn
 
 
-def _request(forwarded_for=None, client_host="127.0.0.1"):
+def _request(forwarded_for=None, client_host="127.0.0.1", lambda_context=None):
     headers = {"x-forwarded-for": forwarded_for} if forwarded_for else {}
+    if lambda_context is not None:
+        headers["x-amzn-request-context"] = lambda_context
     client = SimpleNamespace(host=client_host) if client_host else None
     return SimpleNamespace(headers=headers, client=client)
+
+
+@case
+def test_client_ip_on_lambda_ignores_spoofed_forwarded_for():
+    ctx = json.dumps({"http": {"sourceIp": "203.0.113.77"}})
+    for fake in ("1.1.1.1", "2.2.2.2"):
+        req = _request(forwarded_for=fake, lambda_context=ctx)
+        assert R.client_ip(req) == "203.0.113.77"
+
+
+@case
+def test_client_ip_bad_lambda_context_falls_back():
+    req = _request(forwarded_for="203.0.113.5", lambda_context="not json")
+    assert R.client_ip(req) == "203.0.113.5"
 
 
 @case

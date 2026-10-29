@@ -20,3 +20,9 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Terraform (state holds secrets; stays local)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars

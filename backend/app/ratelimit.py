@@ -12,6 +12,7 @@ shared store (e.g. Redis) keyed the same way.
 
 from __future__ import annotations
 
+import json
 import time
 from collections import defaultdict, deque
 
@@ -40,10 +41,22 @@ class _SlidingWindowLimiter:
 
 
 def client_ip(request: Request) -> str:
-    """Client IP from the first X-Forwarded-For hop (Render sits behind a proxy).
+    """Client IP for rate-limit keys.
 
-    Falls back to the direct connection address for local dev / no proxy.
+    On AWS Lambda, the Lambda Web Adapter adds `x-amzn-request-context` (JSON)
+    whose `http.sourceIp` is the real TCP peer, set by AWS. Prefer it, since the
+    client controls X-Forwarded-For and could send a new fake IP per request.
+    Elsewhere: the first X-Forwarded-For hop (Render's proxy), then the direct
+    connection address for local dev.
     """
+    context = request.headers.get("x-amzn-request-context")
+    if context:
+        try:
+            source_ip = json.loads(context)["http"]["sourceIp"]
+        except (ValueError, KeyError, TypeError):
+            source_ip = None
+        if source_ip:
+            return source_ip
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
