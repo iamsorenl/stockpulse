@@ -8,6 +8,12 @@ win over the file.
 
 Environment variables (all optional; sensible defaults for local dev):
   STOCKPULSE_DB_PATH       SQLite cache file. Default: backend/stockpulse.db
+  STOCKPULSE_STORE         "sqlite" (default) or "dynamodb" (AWS deploy).
+  STOCKPULSE_TABLE         DynamoDB table name. Default: stockpulse
+  STOCKPULSE_METER_LIMIT_REQUESTS    Monthly Lambda requests before the app
+                                     switches itself off. Default: 800000
+  STOCKPULSE_METER_LIMIT_GB_SECONDS  Monthly Lambda GB-seconds, same. Default: 320000
+  STOCKPULSE_METER_INIT_SECONDS      Billed startup estimate per new instance. Default: 10
   STOCKPULSE_CORS_ORIGINS  Comma-separated allowed browser origins.
                            Default: http://localhost:5173 (Vite dev server).
 
@@ -24,6 +30,8 @@ Environment variables (all optional; sensible defaults for local dev):
 
   --- M2 sentiment integrations (optional; features degrade cleanly if unset) ---
   GROQ_API_KEY             Groq API key                       (console.groq.com)
+  GROQ_API_KEY_PARAM       SSM parameter name holding the key (AWS deploy).
+                           Used only when GROQ_API_KEY is unset.
   GROQ_MODEL               Groq model id. Default: openai/gpt-oss-20b
   OLLAMA_BASE_URL          Local Ollama endpoint. Default: http://localhost:11434
   OLLAMA_MODEL             Local model for fallback. Default: llama3.1
@@ -61,6 +69,16 @@ def _clean(value: str | None) -> str | None:
 # SQLite cache database location.
 DB_PATH = Path(os.environ.get("STOCKPULSE_DB_PATH", BACKEND_DIR / "stockpulse.db"))
 
+# Storage backend: "sqlite" (local/tests/Render) or "dynamodb" (AWS Lambda).
+STORE = (_clean(os.environ.get("STOCKPULSE_STORE")) or "sqlite").lower()
+DYNAMODB_TABLE = _clean(os.environ.get("STOCKPULSE_TABLE")) or "stockpulse"
+
+# Free-tier meter (AWS only, see dynamo_store.meter_request). Defaults are 80%
+# of Lambda's monthly free allowance: 1M requests, 400k GB-seconds.
+METER_LIMIT_REQUESTS = int(os.environ.get("STOCKPULSE_METER_LIMIT_REQUESTS", "800000"))
+METER_LIMIT_GB_SECONDS = int(os.environ.get("STOCKPULSE_METER_LIMIT_GB_SECONDS", "320000"))
+METER_INIT_SECONDS = float(os.environ.get("STOCKPULSE_METER_INIT_SECONDS", "10"))
+
 # CORS: the Vite dev server origin by default. Override with a comma-separated list.
 _default_origins = "http://localhost:5173"
 CORS_ORIGINS = [
@@ -87,7 +105,18 @@ ARCTIC_SHIFT_BASE_URL = (
     or "https://arctic-shift.photon-reddit.com/api"
 )
 
+def _groq_key_from_ssm(name: str) -> str | None:
+    """Read the Groq key from SSM Parameter Store (AWS deploy). Runs once at
+    startup, so the key never sits in the Lambda's env vars or Terraform state."""
+    import boto3  # only needed on AWS; local runs use GROQ_API_KEY directly
+
+    resp = boto3.client("ssm").get_parameter(Name=name, WithDecryption=True)
+    return _clean(resp["Parameter"]["Value"])
+
+
 GROQ_API_KEY = _clean(os.environ.get("GROQ_API_KEY"))
+if not GROQ_API_KEY and _clean(os.environ.get("GROQ_API_KEY_PARAM")):
+    GROQ_API_KEY = _groq_key_from_ssm(os.environ["GROQ_API_KEY_PARAM"].strip())
 GROQ_MODEL = _clean(os.environ.get("GROQ_MODEL")) or "openai/gpt-oss-20b"
 
 OLLAMA_BASE_URL = _clean(os.environ.get("OLLAMA_BASE_URL")) or "http://localhost:11434"

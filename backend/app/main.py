@@ -17,17 +17,22 @@ The search and price routes live in app/api.py and are mounted below.
 
 from __future__ import annotations
 
+import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import config
 from .api import router as api_router
 from .config import CORS_ORIGINS
 from .db import init_db
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -46,6 +51,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+if config.STORE == "dynamodb":
+    from .dynamo_store import meter_request
+
+    @app.middleware("http")
+    async def free_tier_meter(request: Request, call_next):
+        """Count each Lambda invocation toward the monthly free allowance.
+        Only requests that came through Lambda carry x-amzn-request-context;
+        the adapter's own local /health readiness checks don't, and aren't billed."""
+        start = time.monotonic()
+        try:
+            return await call_next(request)
+        finally:  # count failed requests too; Lambda bills them the same
+            if "x-amzn-request-context" in request.headers:
+                try:
+                    meter_request(time.monotonic() - start)
+                except Exception:  # noqa: BLE001 - usage is kept and retried on the next request
+                    logger.exception("free-tier meter update failed")
 
 
 @app.get("/health")
