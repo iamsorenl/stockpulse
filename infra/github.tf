@@ -56,6 +56,14 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = aws_ecr_repository.app.arn
       },
       {
+        # Logged-in pulls from the public ECR registry (where the Lambda Web
+        # Adapter image lives). Anonymous pulls from GitHub's shared runner IPs
+        # get rate-limited (429). Neither action can be scoped to a resource.
+        Effect   = "Allow"
+        Action   = ["ecr-public:GetAuthorizationToken", "sts:GetServiceBearerToken"]
+        Resource = "*"
+      },
+      {
         Effect   = "Allow"
         Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:GetFunctionUrlConfig"]
         Resource = aws_lambda_function.app.arn
