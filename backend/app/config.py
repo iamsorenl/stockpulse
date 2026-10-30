@@ -69,7 +69,7 @@ def _clean(value: str | None) -> str | None:
 # SQLite cache database location.
 DB_PATH = Path(os.environ.get("STOCKPULSE_DB_PATH", BACKEND_DIR / "stockpulse.db"))
 
-# Storage backend: "sqlite" (local/tests/Render) or "dynamodb" (AWS Lambda).
+# Storage backend: "sqlite" (local/tests) or "dynamodb" (AWS Lambda).
 STORE = (_clean(os.environ.get("STOCKPULSE_STORE")) or "sqlite").lower()
 DYNAMODB_TABLE = _clean(os.environ.get("STOCKPULSE_TABLE")) or "stockpulse"
 

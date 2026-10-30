@@ -105,7 +105,7 @@ class _SPAStaticFiles(StaticFiles):
 
 
 # Single-service deploy: FastAPI also serves the built frontend at "/", so one
-# Render web service covers both the API and the UI. Registered last so it
+# Lambda function covers both the API and the UI. Registered last so it
 # never shadows /health or /api/* above. No-op locally unless you've run
 # `npm run build` in frontend/ (frontend/dist/ is gitignored).
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

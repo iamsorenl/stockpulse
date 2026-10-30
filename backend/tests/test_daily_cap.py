@@ -1,4 +1,4 @@
-"""Tests for the global daily Groq call cap (Render deploy hardening).
+"""Tests for the global daily Groq call cap (public deploy hardening).
 
 No network -- `groq_chat` must short-circuit with a rate-limit LlmError once the cap is hit,
 without ever reaching urllib. Run from backend/:

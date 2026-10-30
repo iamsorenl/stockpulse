@@ -1,4 +1,4 @@
-"""Tests for the per-IP sliding-window rate limiter (Render deploy hardening).
+"""Tests for the per-IP sliding-window rate limiter (public deploy hardening).
 
 No network, no FastAPI app boot -- exercises the limiter class and the
 X-Forwarded-For parsing directly. Run from backend/:
@@ -61,7 +61,7 @@ def test_client_ip_bad_lambda_context_falls_back():
 
 @case
 def test_client_ip_ignores_lambda_header_off_lambda():
-    # On Render/local nothing strips a client-sent copy, so it must not count.
+    # Off Lambda nothing strips a client-sent copy, so it must not count.
     ctx = json.dumps({"http": {"sourceIp": "6.6.6.6"}})
     req = _request(forwarded_for="203.0.113.5", lambda_context=ctx)
     assert R.client_ip(req) == "203.0.113.5"

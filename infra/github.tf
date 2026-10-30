@@ -64,8 +64,12 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = "*"
       },
       {
-        Effect   = "Allow"
-        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:GetFunctionUrlConfig"]
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionCode", "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration", # `aws lambda wait function-updated` polls this
+          "lambda:GetFunctionUrlConfig",
+        ]
         Resource = aws_lambda_function.app.arn
       },
     ]

@@ -5,9 +5,11 @@ quota from being burned by one heavy client, not to be a general-purpose
 limiter. Stdlib only (collections.deque), no new dependency.
 
 Ceiling: state is an in-process dict, so limits only hold within a single
-process/instance and reset on restart. Fine for the single free-tier Render
-instance this app targets; if it ever scales to >1 instance, swap for a
-shared store (e.g. Redis) keyed the same way.
+process/instance and reset on restart. On Lambda each warm instance keeps its
+own counts, so a client spread across N instances gets up to N times the
+limit (N is capped by the account's concurrency limit, 10). The Groq daily
+cap is the real budget guard and is shared through DynamoDB. If this limit
+ever needs to be exact, move the counts to the same table.
 """
 
 from __future__ import annotations
@@ -48,9 +50,9 @@ def client_ip(request: Request) -> str:
     whose `http.sourceIp` is the real TCP peer, set by AWS. Prefer it, since the
     client controls X-Forwarded-For and could send a new fake IP per request.
     The adapter overwrites any copy a client sends (tested live), but only on
-    Lambda, so the header is ignored elsewhere: on Render or locally a client
+    Lambda, so the header is ignored elsewhere: off Lambda a client
     could set it to anything.
-    Elsewhere: the first X-Forwarded-For hop (Render's proxy), then the direct
+    Elsewhere: the first X-Forwarded-For hop (behind a proxy), then the direct
     connection address for local dev.
     """
     context = request.headers.get("x-amzn-request-context")

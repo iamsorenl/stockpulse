@@ -2,8 +2,8 @@
 
 A live stock app that puts price trends and crowd sentiment on the same chart.
 
-**Live:** https://stockpulse-6q41.onrender.com (free Render instance, so the
-first load after idle can take up to a minute)
+**Live:** https://t4brsvyq6qmnknw4lwquukjhhe0rsdqa.lambda-url.us-west-2.on.aws/
+(AWS Lambda, inside the free tier; the first load after idle takes a few seconds)
 
 - Search by symbol or company name, then view candlesticks with 20 and 50 day
   moving averages and an up / down / sideways trend read
@@ -24,6 +24,7 @@ stockpulse/
 │   │   ├── api.py      /api routes: search, prices, sentiment, trend events, chat
 │   │   ├── config.py   Env-configurable settings (single source of truth)
 │   │   ├── db.py       SQLite cache + sentiment snapshot tables
+│   │   ├── dynamo_store.py  DynamoDB version of db.py, plus the free-tier meter (AWS)
 │   │   ├── providers.py  yfinance prices with a Stooq fallback
 │   │   ├── sentiment.py  Groq scoring over Reddit, ApeWisdom and news
 │   │   └── ratelimit.py  per-IP limits and the daily model-call cap
@@ -38,6 +39,8 @@ stockpulse/
 │   │   └── components/ PriceChart (lightweight-charts), SentimentPanel, TickerChat, ...
 │   ├── vite.config.ts  Dev server (:5173) + proxy for /api and /health
 │   └── .env.example
+├── infra/              Terraform for the AWS deploy
+├── Dockerfile          Lambda container image (frontend build + backend)
 └── README.md
 ```
 
@@ -94,7 +97,7 @@ Open http://localhost:5173. Sentiment and chat need `GROQ_API_KEY` in
 ## Tests
 
 ```bash
-cd backend && ./.venv/bin/pip install pytest && ./.venv/bin/pytest
+cd backend && ./.venv/bin/pip install pytest "moto[dynamodb]" && ./.venv/bin/pytest
 ```
 
 ## Sentiment snapshots (daily timeline)
@@ -177,35 +180,69 @@ Symbol OR company-name match. Empty list on no match — never an error.
 - `trend` — one of `"up"`, `"down"`, `"sideways"`.
 - Unknown ticker → **HTTP 404** with `{ "detail": "..." }` (clear message).
 
-## Deploy (Render)
+## Deploy (AWS)
 
-Single Render web service serves both the API and the built frontend at one
-URL — `backend/app/main.py` mounts `frontend/dist` at `/` (after `/api` and
-`/health`) with an SPA fallback to `index.html`, so the frontend's default
-relative-URL API calls just work same-origin.
+One AWS Lambda function serves both the API and the built frontend at one URL
+(`backend/app/main.py` mounts `frontend/dist` at `/` after `/api` and
+`/health`). The app runs as a container image with the
+[Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter), so it
+is the same FastAPI app as local dev, unchanged.
 
-1. Sign in to [Render](https://render.com) with GitHub.
-2. **New** → **Blueprint** → pick the `iamsorenl/stockpulse` repo. Render
-   reads `render.yaml` at the repo root and provisions one free-plan web
-   service.
-3. When prompted, paste your `GROQ_API_KEY` (from console.groq.com) — it's
-   marked `sync: false` in the blueprint, so Render asks for it rather than
-   reading it from the repo.
-4. Deploy. First boot installs backend + frontend deps and runs `npm run
-   build`, so it's slower than a warm deploy.
+```
+browser -> Lambda Function URL -> container (FastAPI + built frontend)
+                                    |-- DynamoDB: cache, sentiment history, Groq cap, usage meter
+                                    '-- SSM Parameter Store: Groq key, read at startup
+```
+
+All infrastructure is Terraform in `infra/`. Pushes to `main` run the tests,
+then build, push and deploy a new image (`.github/workflows/deploy.yml`). The
+workflow logs in to AWS with GitHub OIDC, so GitHub stores no AWS keys.
+
+### First-time setup
+
+Needs the AWS CLI (configured), Terraform and Docker.
+
+```bash
+# 1. Store the Groq key (kept out of Terraform state and the repo)
+aws ssm put-parameter --name /stockpulse/groq-api-key --type SecureString --value <key>
+
+# 2. Create the image registry first; the function needs an image to exist
+cd infra && terraform init && terraform apply -target=aws_ecr_repository.app
+
+# 3. Build and push the first image, tagged "bootstrap"
+ECR=$(terraform output -raw ecr_url)
+aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%%/*}"
+cd .. && docker build --platform linux/arm64 --provenance=false -t "$ECR:bootstrap" . && docker push "$ECR:bootstrap"
+
+# 4. Create everything else, then print the site URL
+cd infra && terraform apply && terraform output url
+```
+
+Then click the confirmation link in the AWS email to get alerts. To deploy
+from a fork, change `github_repo` in `infra/github.tf` and `AWS_ROLE_ARN` in
+the workflow.
+
+### Staying free
+
+- **Self-metering.** Each request adds its count and duration to a monthly
+  total in DynamoDB. At 80% of Lambda's free allowance (800k requests or 320k
+  GB-seconds) the app sets its own concurrency to 0, which turns the site off
+  until you turn it back on:
+  `aws lambda delete-function-concurrency --function-name stockpulse`
+- **DynamoDB** uses fixed capacity (10 reads/10 writes per second), which the
+  always-free tier covers. Bursts get slowed down, not billed.
+- **Backups:** email alarms on function errors and throttles, and an AWS
+  budget that emails at $0.50 and $1. Budgets only notify; they don't stop
+  spending.
+- ECR keeps the newest 3 images, which costs a few cents a month.
 
 Notes:
-- **Free-plan cold start**: the instance spins down after inactivity; the
-  first request after idle can take ~50s while it spins back up.
-- **SQLite is an ephemeral cache there.** Render's free plan has no persistent
-  disk, so `backend/stockpulse.db` (the price/sentiment cache + snapshot
-  history) resets on every deploy/restart — it's a cache, not a database of
-  record.
-- **Yahoo often blocks datacenter IPs** (the free plan's), which can make
-  `yfinance` fail from Render even though it works fine locally. Price
-  fetching already falls back to Stooq's free, keyless daily CSV endpoint in
-  `backend/app/providers.py` when Yahoo yields nothing, so prices still load.
-- Rate limiting and the daily Groq call cap (see `backend/.env.example`)
-  protect the shared free-tier Groq key from one client burning the quota;
-  they're in-memory and single-instance, matching the free plan's one
-  instance.
+- **Rate limits are per instance.** The per-IP limiter keeps its counts in
+  memory, so a client spread across several warm instances can get a multiple
+  of the limit (up to the account's concurrency limit, 10). The daily Groq cap
+  is shared through DynamoDB, so the model budget holds exactly.
+- **Yahoo often blocks datacenter IPs**, which can make `yfinance` fail from
+  AWS even though it works locally. Price fetching falls back to Stooq's free
+  daily CSV endpoint (`backend/app/providers.py`), so prices still load.
+- Local dev and tests still use SQLite; the app only switches to DynamoDB when
+  `STOCKPULSE_STORE=dynamodb` (set by Terraform on the function).
