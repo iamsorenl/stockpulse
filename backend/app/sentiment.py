@@ -98,7 +98,7 @@ def _now_iso() -> str:
 
 # Global counter of Groq calls, resetting at UTC midnight. Shared by sentiment
 # scoring and the ticker chat, so both draw from one daily budget. In memory
-# for a single process (local/Render); in DynamoDB on Lambda, where each
+# for a single process (local); in DynamoDB on Lambda, where each
 # instance would otherwise get its own full budget.
 if config.STORE == "dynamodb":
     from .dynamo_store import SharedDailyCap
