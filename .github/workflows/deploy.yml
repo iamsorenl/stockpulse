@@ -47,6 +47,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+      # The Dockerfile pulls the Lambda Web Adapter from public.ecr.aws; logged-in
+      # pulls avoid its rate limit on shared runner IPs. Public ECR lives in us-east-1.
+      - name: Log in to public ECR
+        run: aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
       # Tag each image with its commit so every deploy can be traced back.
       # --provenance=false: Lambda rejects images carrying build attestations.
